@@ -7,6 +7,7 @@ import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import GenericPage from '@/pages/GenericPage';
 import { getToken } from '@/services/auth';
+import HomeManager from '@/components/HomeManager';
 
 export default function App() {
     return (
@@ -34,8 +35,10 @@ export default function App() {
                     path="/console/dashboard"
                     element={getToken() ? <Dashboard /> : <Navigate to="/console/login" replace />}
                 />
-
-
+                <Route
+                    path="/console/home"
+                    element={getToken() ? <HomeManager /> : <Navigate to="/console/login" replace />}
+                />
             </Routes>
         </Layout>
     );

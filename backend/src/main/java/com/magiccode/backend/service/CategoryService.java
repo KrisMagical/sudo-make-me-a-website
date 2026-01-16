@@ -1,7 +1,7 @@
 package com.magiccode.backend.service;
 
 import com.magiccode.backend.dto.CategoryDto;
-import com.magiccode.backend.mapping.CategoryMapping;
+import com.magiccode.backend.mapping.CategoryMapper;
 import com.magiccode.backend.model.Category;
 import com.magiccode.backend.repository.CategoryRepository;
 import lombok.AllArgsConstructor;
@@ -17,12 +17,12 @@ import java.util.List;
 @Transactional
 public class CategoryService {
     private CategoryRepository categoryRepository;
-    private CategoryMapping categoryMapping;
+    private CategoryMapper categoryMapper;
 
     public List<CategoryDto> getAllCategories() {
         return categoryRepository.findAll()
                 .stream()
-                .map(categoryMapping::toCategoryDto)
+                .map(categoryMapper::toCategoryDto)
                 .toList();
     }
 
@@ -33,9 +33,9 @@ public class CategoryService {
         if (categoryRepository.existsBySlug(categoryDto.getSlug())) {
             throw new RuntimeException("Category slug already exists!");
         }
-        Category category = categoryMapping.toCategoryEntity(categoryDto);
+        Category category = categoryMapper.toCategoryEntity(categoryDto);
         Category category_save = categoryRepository.save(category);
-        return categoryMapping.toCategoryDto(category_save);
+        return categoryMapper.toCategoryDto(category_save);
     }
 
     public CategoryDto updateCategory(String name, CategoryDto categoryDto) {
@@ -44,7 +44,7 @@ public class CategoryService {
         category.setName(categoryDto.getName());
         category.setSlug(categoryDto.getSlug());
         Category category_update = categoryRepository.save(category);
-        return categoryMapping.toCategoryDto(category_update);
+        return categoryMapper.toCategoryDto(category_update);
     }
 
     public void deleteCategory(String name) {

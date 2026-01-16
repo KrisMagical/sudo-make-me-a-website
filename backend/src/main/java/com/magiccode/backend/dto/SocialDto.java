@@ -9,12 +9,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageDto {
+public class SocialDto {
     private Long id;
-    private String slug;
-    private String title;
-    private String content;
-
-    private Long parentId;
-    private Integer orderIndex;
+    private String name;
+    private String url;
+    private String description;
+    private String iconUrl;
 }

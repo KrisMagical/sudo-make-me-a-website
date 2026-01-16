@@ -37,10 +37,12 @@ public class SecurityConfig {
             "/api/posts/{postId}/like",
             "/api/posts/{slug}/likes",
             "/api/posts/category/**",
+            "/api/posts/recent",
             "/api/categories/**",
             "/api/comments/**",
             "/api/pages",
             "/api/pages/{slug}",
+            "/api/socials",
 
             // 登录接口
             "/login",

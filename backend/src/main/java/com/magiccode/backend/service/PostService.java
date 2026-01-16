@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -206,6 +207,19 @@ public class PostService {
         }
         likeLogService.deleteAllByPostId(post.getId());
         postRepository.delete(post);
+    }
+
+    public List<PostSummaryDto> getRecentPosts(int limit) {
+        return postRepository.findAll()
+                .stream()
+                .sorted((a, b) -> {
+                    LocalDateTime aTime = a.getUpdateAt() != null ? a.getUpdateAt() : a.getCreatedAt();
+                    LocalDateTime bTime = b.getUpdateAt() != null ? b.getUpdateAt() : b.getCreatedAt();
+                    return bTime.compareTo(aTime);
+                })
+                .limit(limit)
+                .map(postSummaryMapper::toPostSummaryDto)
+                .toList();
     }
 
     //Tools Methods

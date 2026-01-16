@@ -5,16 +5,18 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageDto {
+public class HomeProfileDto {
     private Long id;
-    private String slug;
     private String title;
     private String content;
 
-    private Long parentId;
-    private Integer orderIndex;
+    private String coverImageUrl;
+    private String coverVideoUrl;
+    private List<HomeMediaDto> mediaDtoList;
 }

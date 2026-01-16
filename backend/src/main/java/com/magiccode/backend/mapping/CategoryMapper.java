@@ -5,7 +5,7 @@ import com.magiccode.backend.model.Category;
 import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring")
-public interface CategoryMapping {
+public interface CategoryMapper {
     CategoryDto toCategoryDto(Category category);
 
     Category toCategoryEntity(CategoryDto dto);

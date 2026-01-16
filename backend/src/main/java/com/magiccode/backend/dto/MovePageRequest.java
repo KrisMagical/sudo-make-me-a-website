@@ -9,12 +9,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageDto {
-    private Long id;
-    private String slug;
-    private String title;
-    private String content;
 
+public class MovePageRequest {
     private Long parentId;
     private Integer orderIndex;
 }

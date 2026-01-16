@@ -7,7 +7,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "pages")
+@Table(name = "pages", indexes = {
+        @Index(name = "idx_pages_slug", columnList = "slug"),
+        @Index(name = "index_pages_parent", columnList = "parent_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -23,4 +26,10 @@ public class Page {
     @Lob
     @Column(nullable = false, columnDefinition = "MEDIUMTEXT")
     private String content;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private Page parent;
+    @Column(name = "order_index", nullable = false)
+    @Builder.Default
+    private Integer orderIndex = 0;
 }

@@ -1,5 +1,6 @@
 package com.magiccode.backend.controller;
 
+import com.magiccode.backend.dto.MovePageRequest;
 import com.magiccode.backend.dto.PageDto;
 import com.magiccode.backend.service.PageService;
 import lombok.RequiredArgsConstructor;
@@ -20,13 +21,15 @@ public class PageController {
 
     @GetMapping("/{slug}")
     public ResponseEntity<PageDto> getPageBySlug(@PathVariable String slug) {
-        PageDto pageDto=pageService.getPageBySlug(slug);
+        PageDto pageDto = pageService.getPageBySlug(slug);
         return new ResponseEntity<>(pageDto, HttpStatus.OK);
     }
+
     @GetMapping
     public ResponseEntity<List<PageDto>> listPages() {
         return ResponseEntity.ok(pageService.listAll());
     }
+
     @PreAuthorize("hasRole('ROOT')")
     @PostMapping
     public ResponseEntity<PageDto> createPage(@RequestBody PageDto dto) {
@@ -36,7 +39,7 @@ public class PageController {
 
 
     @PreAuthorize("hasRole('ROOT')")
-    @PostMapping(value = "/create-md", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
+    @PostMapping(value = "/create-md", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
     public ResponseEntity<PageDto> createPageFromMarkdown(
             @RequestParam("file") MultipartFile mdFile,
             @RequestParam String slug,
@@ -56,7 +59,7 @@ public class PageController {
 
 
     @PreAuthorize("hasRole('ROOT')")
-    @PutMapping(value = "/update-md/{slug}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
+    @PutMapping(value = "/update-md/{slug}", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
     public ResponseEntity<PageDto> updatePageFromMarkdownBySlug(
             @PathVariable String slug,
             @RequestParam("file") MultipartFile mdFile
@@ -65,11 +68,26 @@ public class PageController {
         return new ResponseEntity<>(updated, HttpStatus.OK);
     }
 
-    // 删除（需要 ROOT）——按 slug 删除
     @PreAuthorize("hasRole('ROOT')")
     @DeleteMapping("/{slug}")
     public ResponseEntity<String> deletePage(@PathVariable String slug) {
         pageService.deleteBySlug(slug);
         return ResponseEntity.ok(slug);
+    }
+
+    @GetMapping("/{slug}/backlinks")
+    public ResponseEntity<List<PageDto>> backlinks(@PathVariable String slug) {
+        return ResponseEntity.ok(pageService.listBackLinks(slug));
+    }
+
+    @GetMapping("/{slug}/outlinks")
+    public ResponseEntity<List<PageDto>> outlinks(@PathVariable String slug) {
+        return ResponseEntity.ok(pageService.listOutlinks(slug));
+    }
+
+    @PreAuthorize("hasRole('ROOT')")
+    @PatchMapping("/{slug}/move")
+    public ResponseEntity<PageDto> move(@PathVariable String slug, @RequestBody MovePageRequest request) {
+        return ResponseEntity.ok(pageService.moveBySlug(slug, request));
     }
 }

@@ -1,5 +1,6 @@
 package com.magiccode.backend.dto;
 
+import com.magiccode.backend.model.HomeMedia;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,12 +10,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageDto {
+public class HomeMediaDto {
     private Long id;
-    private String slug;
-    private String title;
-    private String content;
-
-    private Long parentId;
+    private HomeMedia.MediaType type;
+    private String url;
+    private String caption;
     private Integer orderIndex;
 }

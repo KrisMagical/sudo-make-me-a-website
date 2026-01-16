@@ -1,152 +1,254 @@
-import { useEffect, useState } from 'react';
-import type { AppSettings, SocialLink } from '@/types/settings';
-import { getSettings, saveSettings, addSocialLink, removeSocialLink, updateSocialLink, isValidUrl, defaultSettings } from '@/services/settings';
+// src/components/SocialLinksManager.tsx
+import { useEffect, useMemo, useState } from "react";
+import type { SocialDto } from "@/types/dtos";
+import { createSocial, deleteSocial, listSocials, updateSocial } from "@/services/api";
+
+type Mode = "create" | "edit";
+
+const emptyDraft: SocialDto = {
+  name: "",
+  url: "",
+  description: "",
+};
 
 export default function SocialLinksManager() {
-    const [settings, setSettings] = useState<AppSettings>(getSettings());
-    const [dirty, setDirty] = useState(false);
+  const [socials, setSocials] = useState<SocialDto[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-    // 热更新：其他地方更新设置时刷新
-    useEffect(() => {
-        const onUpdated = () => setSettings(getSettings());
-        window.addEventListener('app-settings-updated', onUpdated);
-        return () => window.removeEventListener('app-settings-updated', onUpdated);
-    }, []);
+  const [mode, setMode] = useState<Mode>("create");
+  const [editingId, setEditingId] = useState<number | null>(null);
 
-    // site 基本信息
-    const onChangeSite = (key: 'title' | 'subtitle' | 'avatarUrl', value: string) => {
-        setSettings(prev => ({ ...prev, site: { ...prev.site, [key]: value } }));
-        setDirty(true);
-    };
+  const [draft, setDraft] = useState<SocialDto>({ ...emptyDraft });
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [externalIconUrl, setExternalIconUrl] = useState("");
 
-    // 新增一个社交项
-    const onAdd = () => {
-        const id = addSocialLink({ label: 'New', href: 'https://example.com', iconUrl: '' });
-        setSettings(getSettings());
-        setDirty(false); // 因为已直接保存
-        // 也可以在此滚动到新项
-    };
+  const canSubmit = useMemo(() => {
+    return draft.name.trim().length > 0 && draft.url.trim().length > 0;
+  }, [draft.name, draft.url]);
 
-    const onRemove = (id: string) => {
-        if (!confirm('确定删除该社交链接吗？')) return;
-        removeSocialLink(id);
-        setSettings(getSettings());
-    };
+  async function refresh() {
+    setLoading(true);
+    try {
+      const data = await listSocials();
+      setSocials(data);
+    } catch (e) {
+      console.error(e);
+      alert("加载 Social 列表失败：请检查后端是否启动/CORS/权限");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-    const onChangeItem = (id: string, key: keyof Omit<SocialLink, 'id'>, value: string) => {
-        // 本地即时反应
-        setSettings(prev => ({
-            ...prev,
-            social: prev.social.map(s => (s.id === id ? { ...s, [key]: value } : s)),
-        }));
-        setDirty(true);
-    };
+  useEffect(() => {
+    refresh();
+  }, []);
 
-    const onSave = () => {
-        // 简单校验
-        for (const s of settings.social) {
-            if (!s.label.trim()) return alert('请填写每个社交项的名称');
-            if (!isValidUrl(s.href)) return alert(`链接不合法：${s.href}`);
-            // iconUrl 可为空（例如用本地图标）
+  function resetForm() {
+    setMode("create");
+    setEditingId(null);
+    setDraft({ ...emptyDraft });
+    setIconFile(null);
+    setExternalIconUrl("");
+  }
+
+  function startEdit(s: SocialDto) {
+    setMode("edit");
+    setEditingId(s.id ?? null);
+    setDraft({
+      name: s.name ?? "",
+      url: s.url ?? "",
+      description: s.description ?? "",
+    });
+    setIconFile(null);
+    setExternalIconUrl("");
+  }
+
+  async function onSubmit() {
+    if (!canSubmit) return;
+
+    // icon 二选一：建议你只填一个；这里不强制，交给后端决定
+    setSaving(true);
+    try {
+      if (mode === "create") {
+        await createSocial({
+          data: {
+            name: draft.name.trim(),
+            url: draft.url.trim(),
+            description: draft.description?.trim() ?? "",
+          },
+          iconFile,
+          externalIconUrl: externalIconUrl.trim() || null,
+        });
+        alert("Social 已创建！");
+      } else {
+        if (!editingId) {
+          alert("编辑状态缺少 id");
+          return;
         }
-        saveSettings(settings);
-        setDirty(false);
-        alert('已保存设置');
-    };
+        await updateSocial(editingId, {
+          data: {
+            id: editingId,
+            name: draft.name.trim(),
+            url: draft.url.trim(),
+            description: draft.description?.trim() ?? "",
+          },
+          iconFile,
+          externalIconUrl: externalIconUrl.trim() || null,
+        });
+        alert("Social 已更新！");
+      }
 
-    const onReset = () => {
-        if (!confirm('恢复为默认设置？')) return;
-        saveSettings(defaultSettings);
-        setSettings(getSettings());
-        setDirty(false);
-    };
+      await refresh();
+      resetForm();
+    } catch (e) {
+      console.error(e);
+      alert("保存失败：请检查后端是否需要登录/参数是否符合要求");
+    } finally {
+      setSaving(false);
+    }
+  }
 
-    return (
-        <div className="mt-10 border rounded-2xl p-4 space-y-4">
-            <h2 className="text-xl font-semibold">侧边栏社交与站点信息</h2>
+  async function onDelete(id?: number) {
+    if (!id) return;
+    if (!confirm("确定删除该 Social 吗？该操作不可恢复。")) return;
 
-            {/* 站点标题 / 副标题 / 头像 */}
-            <div className="grid md:grid-cols-3 gap-3">
-                <div>
-                    <label className="block text-sm text-gray-600 mb-1">站点标题</label>
-                    <input
-                        className="w-full border px-3 py-2 rounded-xl"
-                        value={settings.site.title}
-                        onChange={e => onChangeSite('title', e.target.value)}
-                        placeholder="Kris Magic"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm text-gray-600 mb-1">副标题</label>
-                    <input
-                        className="w-full border px-3 py-2 rounded-xl"
-                        value={settings.site.subtitle}
-                        onChange={e => onChangeSite('subtitle', e.target.value)}
-                        placeholder="Blog & Notes"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm text-gray-600 mb-1">头像 URL（可选）</label>
-                    <input
-                        className="w-full border px-3 py-2 rounded-xl"
-                        value={settings.site.avatarUrl ?? ''}
-                        onChange={e => onChangeSite('avatarUrl', e.target.value)}
-                        placeholder="https://example.com/avatar.png"
-                    />
-                </div>
-            </div>
+    try {
+      await deleteSocial(id);
+      await refresh();
+      if (editingId === id) resetForm();
+      alert("已删除！");
+    } catch (e) {
+      console.error(e);
+      alert("删除失败：请检查权限/后端状态");
+    }
+  }
 
-            <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium">社交链接</h3>
-                <button onClick={onAdd} className="px-3 py-1 rounded-xl border">新增社交项</button>
-            </div>
+  return (
+    <div className="p-4 rounded-xl border space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">社交链接配置</h2>
+        <button className="px-3 py-1 rounded-xl border" onClick={refresh} disabled={loading}>
+          {loading ? "刷新中..." : "刷新"}
+        </button>
+      </div>
 
-            <div className="space-y-3">
-                {settings.social.map((s) => (
-                    <div key={s.id} className="grid md:grid-cols-12 gap-3 items-center border rounded-xl p-3">
-                        <div className="md:col-span-2">
-                            <label className="block text-sm text-gray-600 mb-1">名称</label>
-                            <input
-                                className="w-full border px-3 py-2 rounded-xl"
-                                value={s.label}
-                                onChange={e => onChangeItem(s.id, 'label', e.target.value)}
-                                placeholder="GitHub / X / YouTube"
-                            />
-                        </div>
-                        <div className="md:col-span-6">
-                            <label className="block text-sm text-gray-600 mb-1">链接</label>
-                            <input
-                                className="w-full border px-3 py-2 rounded-xl"
-                                value={s.href}
-                                onChange={e => onChangeItem(s.id, 'href', e.target.value)}
-                                placeholder="https://github.com/..."
-                            />
-                        </div>
-                        <div className="md:col-span-3">
-                            <label className="block text-sm text-gray-600 mb-1">图标 URL（可空）</label>
-                            <input
-                                className="w-full border px-3 py-2 rounded-xl"
-                                value={s.iconUrl}
-                                onChange={e => onChangeItem(s.id, 'iconUrl', e.target.value)}
-                                placeholder="https://.../icon.svg"
-                            />
-                        </div>
-                        <div className="md:col-span-1 flex justify-end">
-                            <button onClick={() => onRemove(s.id)} className="px-3 py-2 rounded-xl border border-red-500 text-red-600">
-                                删除
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="flex gap-3">
-                <button onClick={onSave} className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-60" disabled={!dirty}>
-                    保存设置
-                </button>
-                <button onClick={onReset} className="px-4 py-2 rounded-xl border">恢复默认</button>
-                {!dirty && <span className="text-sm text-gray-500 self-center">（无未保存更改）</span>}
-            </div>
+      {/* 表单 */}
+      <div className="rounded-xl border p-4 space-y-3">
+        <div className="font-medium">
+          {mode === "create" ? "新增 Social" : `编辑 Social #${editingId ?? ""}`}
         </div>
-    );
+
+        <div className="grid gap-3">
+          <label className="grid gap-1">
+            <span className="text-sm text-gray-600">Name *</span>
+            <input
+              className="border px-3 py-2 rounded-xl"
+              value={draft.name}
+              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              placeholder="GitHub / Twitter / Bilibili ..."
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="text-sm text-gray-600">URL *</span>
+            <input
+              className="border px-3 py-2 rounded-xl"
+              value={draft.url}
+              onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))}
+              placeholder="https://..."
+            />
+          </label>
+
+          <label className="grid gap-1">
+            <span className="text-sm text-gray-600">Description</span>
+            <input
+              className="border px-3 py-2 rounded-xl"
+              value={draft.description ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+              placeholder="可选"
+            />
+          </label>
+
+          <div className="grid gap-2">
+            <div className="text-sm text-gray-600">Icon（二选一）</div>
+
+            <label className="grid gap-1">
+              <span className="text-xs text-gray-500">上传 iconFile</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setIconFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+
+            <label className="grid gap-1">
+              <span className="text-xs text-gray-500">或 externalIconUrl</span>
+              <input
+                className="border px-3 py-2 rounded-xl"
+                value={externalIconUrl}
+                onChange={(e) => setExternalIconUrl(e.target.value)}
+                placeholder="https://.../icon.png"
+              />
+            </label>
+
+            <div className="text-xs text-gray-500">
+              提示：如果同时提供 file 和 externalIconUrl，哪个生效取决于后端实现；建议只填一个。
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={onSubmit}
+              disabled={!canSubmit || saving}
+              className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-60"
+            >
+              {saving ? "提交中..." : mode === "create" ? "创建" : "更新"}
+            </button>
+            <button onClick={resetForm} className="px-4 py-2 rounded-xl border">
+              重置
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 列表 */}
+      <div className="space-y-2">
+        {socials.length === 0 && !loading ? (
+          <div className="text-sm text-gray-600">暂无 Social 数据</div>
+        ) : null}
+
+        {socials.map((s) => (
+          <div
+            key={s.id ?? s.url}
+            className="flex items-center justify-between gap-3 border rounded-xl px-3 py-2"
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                {s.iconUrl ? (
+                  <img src={s.iconUrl} alt={s.name} className="w-5 h-5 object-contain" />
+                ) : (
+                  <span className="w-5 h-5 inline-flex items-center justify-center rounded bg-gray-200 text-xs">
+                    @
+                  </span>
+                )}
+                <div className="font-medium truncate">{s.name}</div>
+              </div>
+              <div className="text-sm text-gray-600 truncate">{s.url}</div>
+              {s.description ? <div className="text-xs text-gray-500 truncate">{s.description}</div> : null}
+            </div>
+
+            <div className="flex gap-2 shrink-0">
+              <button className="px-3 py-1 rounded-xl border" onClick={() => startEdit(s)}>
+                编辑
+              </button>
+              <button className="px-3 py-1 rounded-xl border border-red-500 text-red-600" onClick={() => onDelete(s.id)}>
+                删除
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

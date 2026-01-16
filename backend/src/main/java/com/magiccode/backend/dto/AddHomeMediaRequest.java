@@ -9,12 +9,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageDto {
-    private Long id;
-    private String slug;
-    private String title;
-    private String content;
-
-    private Long parentId;
+public class AddHomeMediaRequest {
+    private String type;
+    private String url;
+    private String caption;
     private Integer orderIndex;
 }

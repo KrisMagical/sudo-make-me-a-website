@@ -23,6 +23,7 @@ import java.util.List;
 public class PostController {
     private final PostService postService;
     private final LikeLogService likeLogService;
+
     @GetMapping("/category/{slug}")
     public ResponseEntity<List<PostSummaryDto>> getPostByCategory(@PathVariable String slug) {
         List<PostSummaryDto> postSummaryDto = postService.getPostByCategorySlug(slug);
@@ -53,8 +54,8 @@ public class PostController {
 
     @PreAuthorize("hasRole('ROOT')")
     @PostMapping(value = "/create-md", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
-    public ResponseEntity<PostDetailDto> createPostFromMarkdown(@RequestParam String categorySlug, @RequestParam("file") MultipartFile mdFile,@RequestParam String slug,@RequestParam(required = false) String title) {
-        return new ResponseEntity<>(postService.createPostFromMarkdown(categorySlug, mdFile,slug,title), HttpStatus.CREATED);
+    public ResponseEntity<PostDetailDto> createPostFromMarkdown(@RequestParam String categorySlug, @RequestParam("file") MultipartFile mdFile, @RequestParam String slug, @RequestParam(required = false) String title) {
+        return new ResponseEntity<>(postService.createPostFromMarkdown(categorySlug, mdFile, slug, title), HttpStatus.CREATED);
     }
 
     @PreAuthorize("hasRole('ROOT')")
@@ -103,9 +104,15 @@ public class PostController {
 
     @PreAuthorize("hasRole('ROOT')")
     @DeleteMapping("/{slug}")
-    public ResponseEntity<String> deletePostBySlug(@PathVariable String slug){
+    public ResponseEntity<String> deletePostBySlug(@PathVariable String slug) {
         postService.deletePostBySlug(slug);
         return ResponseEntity.ok(slug);
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<List<PostSummaryDto>> getRecentPosts(@RequestParam(defaultValue = "5") int limit) {
+        List<PostSummaryDto> dto = postService.getRecentPosts(limit);
+        return ResponseEntity.ok(dto);
     }
 
     @PostMapping("/{postId}/like")
