@@ -314,7 +314,7 @@ else
 fi
 
 # ============================================================
-# 5. 调整文件所有权
+# 5. 调整文件所有权（生产环境推荐）
 # ============================================================
 echo -e "\n${YELLOW}[5/5] Adjusting file ownership for production...${NC}"
 read -p "Do you want to change project directory ownership to www-data? (y/n): " CHOWN_DIR
@@ -325,6 +325,12 @@ if [[ "$CHOWN_DIR" == "y" || "$CHOWN_DIR" == "Y" ]]; then
     else
         echo -e "${RED}✘ User www-data does not exist on this system. Skipping.${NC}"
     fi
+fi
+
+if id "www-data" &>/dev/null; then
+    mkdir -p .npm-cache
+    chown www-data:www-data .npm-cache
+    echo -e "${GREEN}✔ Created .npm-cache for www-data.${NC}"
 fi
 
 # ============================================================

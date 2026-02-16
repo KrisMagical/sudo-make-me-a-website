@@ -152,6 +152,10 @@ cd ..
 # -------------------------------------------------------------------
 echo -e "${BLUE}...Starting frontend service...${NC}"
 cd front || exit
+
+export npm_config_cache="$(pwd)/../.npm-cache"
+mkdir -p "$npm_config_cache"
+
 if [ ! -d "node_modules" ]; then
     echo -e "${YELLOW}Installing frontend dependencies...${NC}"
     npm install > ../frontend-install.log 2>&1
