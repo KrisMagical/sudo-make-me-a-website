@@ -314,7 +314,7 @@ else
 fi
 
 # ============================================================
-# 5. 调整文件所有权（生产环境推荐）
+# 5. 调整文件所有权
 # ============================================================
 echo -e "\n${YELLOW}[5/5] Adjusting file ownership for production...${NC}"
 read -p "Do you want to change project directory ownership to www-data? (y/n): " CHOWN_DIR
@@ -331,6 +331,10 @@ if id "www-data" &>/dev/null; then
     mkdir -p .npm-cache
     chown www-data:www-data .npm-cache
     echo -e "${GREEN}✔ Created .npm-cache for www-data.${NC}"
+
+    mkdir -p .m2-repo
+    chown www-data:www-data .m2-repo
+    echo -e "${GREEN}✔ Created .m2-repo for Maven local repository.${NC}"
 fi
 
 # ============================================================

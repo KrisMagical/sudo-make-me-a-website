@@ -139,6 +139,10 @@ fi
 # 启动后端
 # -------------------------------------------------------------------
 echo -e "${BLUE}...Starting backend service with ./mvnw...${NC}"
+
+export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/.m2-repo"
+mkdir -p "$(pwd)/.m2-repo"
+
 cd backend || exit
 chmod +x mvnw
 nohup ./mvnw spring-boot:run > ../backend.log 2>&1 &
