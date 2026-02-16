@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { parseVideoUrl, splitTextByVideoLinks } from '@/utils/videoParser'
+import 'katex/dist/katex.min.css'
+import renderMathInElement from 'katex/contrib/auto-render'
 
 const props = defineProps<{ content: string }>()
+const contentRef = ref<HTMLElement>()
 
 /**
  * 正则说明：
@@ -105,10 +108,25 @@ const parsedSegments = computed(() => {
 
   return segments
 })
+
+// 监听内容变化，在 DOM 更新后渲染数学公式
+watch(() => props.content, async () => {
+  await nextTick()
+  if (contentRef.value) {
+    renderMathInElement(contentRef.value, {
+      delimiters: [
+        { left: '\\(', right: '\\)', display: false }, // 行内公式
+        { left: '\\[', right: '\\]', display: true }   // 行间公式
+      ],
+      throwOnError: false // 出错时不抛出异常，仅显示原始代码
+    })
+  }
+}, { immediate: true })
 </script>
 
 <template>
-  <div class="prose-vim break-words leading-relaxed text-zinc-800 dark:text-zinc-200">
+  <!-- 添加 ref 以便 KaTeX 定位 -->
+  <div ref="contentRef" class="prose-vim break-words leading-relaxed text-zinc-800 dark:text-zinc-200">
     <template v-for="(seg, i) in parsedSegments" :key="i">
       <!-- 普通文本（直接输出 HTML） -->
       <span v-if="seg.type === 'text'" v-html="seg.value" />

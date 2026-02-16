@@ -10,6 +10,18 @@ import request from '@/utils/request'
 import { notify } from '@/utils/feedback'
 import { parseVideoUrl } from '@/utils/videoParser' // Import parser
 
+const addMath = () => {
+  const formula = prompt('Enter LaTeX formula (e.g. E=mc^2)');
+  if (!formula) return;
+  // 简单用 confirm 区分行内/行间：确定=行内，取消=行间
+  const isInline = confirm('Inline formula? Click OK for inline, Cancel for display block.');
+  const delimiter = isInline ? '\\(' : '\\[';
+  const closing = isInline ? '\\)' : '\\]';
+  const content = delimiter + formula + closing;
+  // 在光标位置插入文本
+  editor.value?.chain().focus().insertContent({ type: 'text', text: content }).run();
+};
+
 const props = defineProps<{
   modelValue: string,
   ownerType: 'POST' | 'PAGE' | 'HOME',
@@ -162,6 +174,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 
       <button @click="triggerImageUpload" class="px-2 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800">ADD_IMAGE</button>
       <button @click="addVideo" class="px-2 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800">ADD_VIDEO</button>
+      <button @click="addMath" class="px-2 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800">ADD_MATH</button>
 
       <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileUpload" />
     </div>
