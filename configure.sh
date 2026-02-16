@@ -338,6 +338,35 @@ if id "www-data" &>/dev/null; then
 fi
 
 # ============================================================
+# 6. 安装依赖 
+# ============================================================
+echo -e "\n${YELLOW}[6/6] Installing dependencies (this may take a few minutes)...${NC}"
+
+# 前端依赖
+echo -e "${YELLOW}...Installing frontend dependencies...${NC}"
+cd front || exit
+export npm_config_cache="$(pwd)/../.npm-cache"
+npm install > ../frontend-install.log 2>&1
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✘ npm install failed. Check frontend-install.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✔ Frontend dependencies installed.${NC}"
+cd ..
+
+# 后端 Maven 依赖
+echo -e "${YELLOW}...Downloading backend dependencies (Maven)...${NC}"
+cd backend || exit
+export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/../.m2-repo"
+./mvnw dependency:go-offline > ../backend-deps.log 2>&1
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✘ Maven dependency download failed. Check backend-deps.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✔ Backend dependencies downloaded.${NC}"
+cd ..
+
+# ============================================================
 # 完成
 # ============================================================
 echo -e "\n${BLUE}==============================================${NC}"

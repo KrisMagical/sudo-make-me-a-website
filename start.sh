@@ -140,6 +140,7 @@ fi
 # -------------------------------------------------------------------
 echo -e "${BLUE}...Starting backend service with ./mvnw...${NC}"
 
+# 设置 Maven 本地仓库路径（必须与 configure.sh 中一致）
 export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/.m2-repo"
 mkdir -p "$(pwd)/.m2-repo"
 
@@ -157,18 +158,11 @@ cd ..
 echo -e "${BLUE}...Starting frontend service...${NC}"
 cd front || exit
 
+# 设置 npm 缓存目录
 export npm_config_cache="$(pwd)/../.npm-cache"
 mkdir -p "$npm_config_cache"
 
-if [ ! -d "node_modules" ]; then
-    echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-    npm install > ../frontend-install.log 2>&1
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}✘ npm install failed. Check frontend-install.log${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✔ Dependencies installed.${NC}"
-fi
+# 不再需要安装依赖，直接启动
 nohup npm run dev > ../frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo $FRONTEND_PID > ../frontend.pid
