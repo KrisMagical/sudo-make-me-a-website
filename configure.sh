@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-
 # ============================================================
-#  SUDO-MAKE-ME-A-WEBSITE | ZERO-CONFIG LAUNCHER (OPTIMIZED)
+#  CONFIGURE SCRIPT | Run as root to set up the environment
 # ============================================================
 
 GREEN='\033[0;32m'
@@ -18,18 +17,6 @@ FRONT_ENV="front/.env"
 FRONT_ENV_EXAMPLE="front/.env.example"
 DATA_SQL_SOURCE="data.sql"
 DATA_SQL_DEST="backend/src/main/resources/data.sql"
-
-# Banner
-clear
-echo -e "${GREEN}"
-echo "  _____           _         "
-echo " / ____|         | |        "
-echo "| (___  _   _  __| | ___    "
-echo " \___ \| | | |/ _\` |/ _ \   "
-echo " ____) | |_| | (_| | (_) |  "
-echo "|_____/ \__,_|\__,_|\___/   "
-echo -e "${NC}"
-echo -e "${BLUE}>> System Auto-Configuration Protocol Initiated...${NC}\n"
 
 # Helper: sed compatible with macOS/Linux
 run_sed() {
@@ -51,97 +38,20 @@ wait_for_mysql() {
     echo -e "${GREEN}✔ MySQL is ready.${NC}"
 }
 
-# -------------------------------------------------------------------
-#  Node.js 版本检查与安装指导
-# -------------------------------------------------------------------
-_print_node_install_instructions() {
-    echo -e "${CYAN}Recommended installation methods for your OS:${NC}"
-    if [[ "$(uname)" == "Darwin" ]]; then
-        echo -e "  ${YELLOW}brew install node@22${NC}"
-        echo -e "  ${YELLOW}brew link --overwrite node@22${NC}"
-        echo -e "${CYAN}Or download installer from https://nodejs.org${NC}"
-    elif [[ -f /etc/debian_version ]]; then
-        echo -e "  ${YELLOW}curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -${NC}"
-        echo -e "  ${YELLOW}sudo apt install -y nodejs${NC}"
-    elif [[ -f /etc/redhat-release ]]; then
-        echo -e "  ${YELLOW}curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -${NC}"
-        echo -e "  ${YELLOW}sudo yum install -y nodejs${NC}"
-    else
-        echo -e "  Please install Node.js 20.19+ or 22.12+ manually from https://nodejs.org"
-    fi
-    echo -e "${CYAN}Alternatively, you can use nvm (Node Version Manager):${NC}"
-    echo -e "  ${YELLOW}curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash${NC}"
-    echo -e "  ${YELLOW}# After installation, restart your terminal or run: source ~/.bashrc${NC}"
-    echo -e "  ${YELLOW}nvm install 20.19.0${NC}"
-    echo -e "  ${YELLOW}nvm use 20.19.0${NC}"
-    echo ""
-}
-
-_print_node_upgrade_instructions() {
-    if command -v nvm &>/dev/null; then
-        echo -e "${CYAN}You have nvm installed. Upgrade Node.js with:${NC}"
-        echo -e "  ${YELLOW}nvm install 20.19.0${NC}"
-        echo -e "  ${YELLOW}nvm alias default 20.19.0${NC}"
-        echo -e "  ${YELLOW}nvm use 20.19.0${NC}"
-        echo -e "${CYAN}Or install latest 22.x:${NC}"
-        echo -e "  ${YELLOW}nvm install 22${NC}"
-        echo -e "  ${YELLOW}nvm use 22${NC}"
-    else
-        echo -e "${CYAN}Recommended upgrade methods for your OS:${NC}"
-        _print_node_install_instructions
-    fi
-}
-
-check_node_version() {
-    if ! command -v node &>/dev/null; then
-        echo -e "${RED}✘ Node.js is not installed.${NC}"
-        echo -e "${YELLOW}Please install Node.js 20.19 or higher (LTS recommended) to run the frontend.${NC}"
-        echo ""
-        _print_node_install_instructions
-        return 1
-    fi
-
-    local node_version=$(node -v | sed 's/v//')
-    local major_version=$(echo "$node_version" | cut -d. -f1)
-    local minor_version=$(echo "$node_version" | cut -d. -f2)
-
-    local valid=0
-    if [[ $major_version -eq 20 && $minor_version -ge 19 ]]; then
-        valid=1
-    elif [[ $major_version -eq 22 && $minor_version -ge 12 ]]; then
-        valid=1
-    elif [[ $major_version -gt 22 ]]; then
-        valid=1
-    fi
-
-    if [[ $valid -eq 0 ]]; then
-        echo -e "${RED}✘ Node.js version $node_version is not supported.${NC}"
-        echo -e "${YELLOW}This project requires Node.js 20.19+ or 22.12+ (LTS recommended).${NC}"
-        echo ""
-        _print_node_upgrade_instructions
-        return 1
-    fi
-
-    echo -e "${GREEN}✔ Node.js version $node_version detected (OK).${NC}"
-    return 0
-}
-
-# -------------------------------------------------------------------
-#  Maven 包装器检查 (使用 ./mvnw)
-# -------------------------------------------------------------------
-_check_mvnw() {
-    if [ ! -f "backend/mvnw" ]; then
-        echo -e "${RED}✘ Maven wrapper (backend/mvnw) not found.${NC}"
-        echo -e "${YELLOW}Please ensure the project structure is correct.${NC}"
-        return 1
-    fi
-    chmod +x backend/mvnw
-    echo -e "${GREEN}✔ Maven wrapper found and executable.${NC}"
-    return 0
-}
+# Banner
+clear
+echo -e "${GREEN}"
+echo "  _____           _         "
+echo " / ____|         | |        "
+echo "| (___  _   _  __| | ___    "
+echo " \___ \| | | |/ _\` |/ _ \   "
+echo " ____) | |_| | (_| | (_) |  "
+echo "|_____/ \__,_|\__,_|\___/   "
+echo -e "${NC}"
+echo -e "${BLUE}>> Configuration Mode Initiated (Run as root)${NC}\n"
 
 # ============================================================
-# 1. 数据库魔法 (Database Magic)
+# 1. 数据库配置
 # ============================================================
 echo -e "${YELLOW}[1/5] Database Configuration...${NC}"
 
@@ -284,7 +194,7 @@ run_sed "s|^spring.datasource.password=.*|spring.datasource.password=${DB_PASS}|
 echo -e "${GREEN}✔ Database configuration updated.${NC}"
 
 # ============================================================
-# 2. 数据初始化 (Data Injection)
+# 2. 数据初始化
 # ============================================================
 echo -e "\n${YELLOW}[2/5] Handling Initial Data...${NC}"
 if [ -f "$DATA_SQL_SOURCE" ]; then
@@ -295,7 +205,7 @@ else
 fi
 
 # ============================================================
-# 3. 前端配置 (Frontend)
+# 3. 前端配置
 # ============================================================
 echo -e "\n${YELLOW}[3/5] Frontend Setup...${NC}"
 
@@ -332,67 +242,9 @@ echo "http://localhost:8080" > .backend-port
 echo -e "${GREEN}✔ Frontend configured.${NC}"
 
 # ============================================================
-# 4. 自动启动 (Auto Launch) - 适用于无窗口服务器
+# 4. 修改默认用户密码
 # ============================================================
-echo -e "\n${YELLOW}[4/5] Auto Launch (Optional)${NC}"
-echo -e "Do you want to automatically start the backend and frontend in the background?"
-read -p "This will run services with nohup and save logs to files. (y/n): " AUTO_START
-
-if [[ "$AUTO_START" == "y" || "$AUTO_START" == "Y" ]]; then
-    # --- Node.js 环境检查 ---
-    echo -e "${YELLOW}...Checking Node.js environment...${NC}"
-    if ! check_node_version; then
-        echo -e "${RED}✘ Cannot start frontend due to Node.js issues.${NC}"
-        echo -e "${CYAN}ℹ You can still start backend manually.${NC}"
-        exit 1
-    fi
-
-    # --- 检查 Maven 包装器 ---
-    echo -e "${YELLOW}...Checking Maven wrapper...${NC}"
-    if ! _check_mvnw; then
-        echo -e "${RED}✘ Cannot start backend due to missing mvnw.${NC}"
-        exit 1
-    fi
-
-    echo -e "${BLUE}...Starting backend service with ./mvnw...${NC}"
-    cd backend || exit
-    # 确保 mvnw 可执行
-    chmod +x mvnw
-    nohup ./mvnw spring-boot:run > ../backend.log 2>&1 &
-    BACKEND_PID=$!
-    echo $BACKEND_PID > ../backend.pid
-    echo -e "${GREEN}✔ Backend started with PID: $BACKEND_PID (logs: backend.log)${NC}"
-    cd ..
-
-    echo -e "${BLUE}...Starting frontend service...${NC}"
-    cd front || exit
-    if [ ! -d "node_modules" ]; then
-        echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-        npm install > ../frontend-install.log 2>&1
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}✘ npm install failed. Check frontend-install.log${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}✔ Dependencies installed.${NC}"
-    fi
-    nohup npm run dev > ../frontend.log 2>&1 &
-    FRONTEND_PID=$!
-    echo $FRONTEND_PID > ../frontend.pid
-    echo -e "${GREEN}✔ Frontend started with PID: $FRONTEND_PID (logs: frontend.log)${NC}"
-
-    echo -e "\n${CYAN}Services are running in the background.${NC}"
-    echo -e "  Backend PID:  ${YELLOW}$BACKEND_PID${NC}  (stop with: kill $BACKEND_PID)"
-    echo -e "  Frontend PID: ${YELLOW}$FRONTEND_PID${NC}  (stop with: kill $FRONTEND_PID)"
-    echo -e "  Log files:    ${CYAN}backend.log, frontend.log${NC}"
-    echo -e "\n${BLUE}To monitor output: tail -f backend.log${NC}"
-else
-    echo -e "${CYAN}ℹ Auto-launch skipped. You can manually start services using the commands below.${NC}"
-fi
-
-# ============================================================
-# 5. 修改默认用户密码 (Change Default Password)
-# ============================================================
-echo -e "\n${YELLOW}[5/5] Default User Password Configuration...${NC}"
+echo -e "\n${YELLOW}[4/5] Default User Password Configuration...${NC}"
 echo -e "Default user: ${CYAN}gosling${NC}"
 read -p "Do you want to change the default user password? (y/n): " CHANGE_PASS
 
@@ -462,13 +314,25 @@ else
 fi
 
 # ============================================================
-# 启动引导
+# 5. 调整文件所有权
+# ============================================================
+echo -e "\n${YELLOW}[5/5] Adjusting file ownership for production...${NC}"
+read -p "Do you want to change project directory ownership to www-data? (y/n): " CHOWN_DIR
+if [[ "$CHOWN_DIR" == "y" || "$CHOWN_DIR" == "Y" ]]; then
+    if id "www-data" &>/dev/null; then
+        chown -R www-data:www-data .
+        echo -e "${GREEN}✔ Ownership changed to www-data.${NC}"
+    else
+        echo -e "${RED}✘ User www-data does not exist on this system. Skipping.${NC}"
+    fi
+fi
+
+# ============================================================
+# 完成
 # ============================================================
 echo -e "\n${BLUE}==============================================${NC}"
-echo -e "${GREEN}   SETUP COMPLETE. READY FOR TAKEOFF.      ${NC}"
+echo -e "${GREEN}   CONFIGURATION COMPLETE.${NC}"
 echo -e "${BLUE}==============================================${NC}"
-echo -e "Use these commands in separate terminals:"
-echo -e "1. Backend: ${YELLOW}cd backend && ./mvnw spring-boot:run${NC}"
-echo -e "2. Frontend: ${YELLOW}cd front && npm install && npm run dev${NC}"
-echo -e "${YELLOW}Note: Frontend requires Node.js 20.19+ or 22.12+. Please verify your Node.js version before running manually.${NC}"
+echo -e "To start services as www-data, run:"
+echo -e "  ${YELLOW}sudo -u www-data ./start.sh${NC}"
 echo -e "\n(If you used Docker, the database is already running in the background!)"

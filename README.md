@@ -13,7 +13,7 @@ It handles the entire stack for you:
 - **Backend** – Spring Boot (Java 21) with a pre‑configured MySQL database
 - **Frontend** – Vite + Vue (modern, fast, hot‑reload)
 - **Database** – Automatically creates a MySQL database (via Docker or your local installation) and imports sample data
-- **Simple setup** – Run the setup script, answer a few questions, and everything is configured and ready.
+- **Simple setup** – Run the configuration script as `root`, then start the services as the `www-data` user. Everything is configured and ready.
 
 No manual database creation, no environment file tweaks, no dependency hell.  
 You just answer a few prompts and your blog is live.
@@ -27,7 +27,7 @@ You just answer a few prompts and your blog is live.
 - **Node.js** – version **20.19+** or **22.12+** (LTS recommended)
 - **MySQL** or **Docker** (one of them is needed for the database)
 
-> The script will check Node.js and guide you if it's missing or outdated.  
+> The configuration script will check Node.js and guide you if it's missing or outdated.  
 > If you don't have MySQL locally, you can let the script spin up a Docker container automatically.
 
 ---
@@ -40,68 +40,79 @@ You just answer a few prompts and your blog is live.
    cd sudo-make-me-a-website
    ```
 
-2. **Make the necessary files executable**:
+2. **Make the scripts executable**:
    ```bash
-   chmod +x setup.sh
+   chmod +x configure.sh start.sh
    chmod +x backend/mvnw
    ```
 
-3. **Run the setup script**:
+3. **Run the configuration script as root** (this sets up the database, environment files, and optionally adjusts file permissions):
    ```bash
-   ./setup.sh
+   sudo ./configure.sh
    ```
 
 4. **Follow the on‑screen prompts** – it will ask you:
     - Whether you have an existing MySQL database or want a new one
     - Your blog title and footer text
-    - Whether to start the backend and frontend automatically
     - Whether to change the default user password (default username: `gosling`)
+    - Whether to change the project directory ownership to `www-data` (recommended for production)
 
-5. **That's it!**  
-   After the script finishes, your blog will be running at:
+5. **After configuration completes**, start the services as the `www-data` user:
+   ```bash
+   sudo -u www-data ./start.sh
+   ```
+
+6. **That's it!**  
+   Your blog will be running at:
     - Frontend: http://localhost:5173 (or the port Vite chooses)
     - Backend API: http://localhost:8080
 
-   If you chose auto‑start, both services run in the background.  
-   If you didn't, follow the manual instructions printed at the end.
+   Both services run in the background, with logs written to `backend.log` and `frontend.log`.
 
 ---
 
-## What the Script Does
+## What the Scripts Do
 
-The script is divided into five friendly steps:
+We now provide **two separate scripts** for a clean separation of concerns:
 
-### 1. Database Magic
-- Asks if you have an existing MySQL database.
-- If not, it offers to create one for you:
-    - With **Docker** (if installed) → spins up a MySQL 8.0 container with UTF‑8 support.
-    - Without Docker → tries to create a local database using your MySQL client.
-- Then it updates `backend/src/main/resources/application.properties` with your database credentials.
+### `configure.sh` (run as `root`)
+This script handles the **one‑time setup**:
 
-### 2. Initial Data Injection
-- If a file named `data.sql` exists in the project root, it is copied to the backend resources folder.  
-  Spring Boot will automatically run it on startup, populating the database with sample content.
+1. **Database Magic**
+    - Asks if you have an existing MySQL database.
+    - If not, it offers to create one for you:
+        - With **Docker** (if installed) → spins up a MySQL 8.0 container with UTF‑8 support.
+        - Without Docker → tries to create a local database using your MySQL client.
+    - Then it updates `backend/src/main/resources/application.properties` with your database credentials.
 
-### 3. Frontend Setup
-- Creates a `.env` file in the `front` folder (based on `.env.example` if present).
-- Asks for your blog title and footer text, and writes them into the environment file.
+2. **Initial Data Injection**
+    - If a file named `data.sql` exists in the project root, it is copied to the backend resources folder.  
+      Spring Boot will automatically run it on startup, populating the database with sample content.
 
-### 4. Auto‑Launch (Optional)
-- If you say **yes**, the script:
-    - Checks Node.js version and Maven wrapper.
-    - Starts the backend with `./mvnw spring-boot:run` in the background (logs go to `backend.log`).
-    - Installs frontend dependencies (`npm install`) and starts the Vite dev server in the background (logs go to `frontend.log`).
-- PIDs are saved to `backend.pid` and `frontend.pid` so you can easily stop them later.
+3. **Frontend Setup**
+    - Creates a `.env` file in the `front` folder (based on `.env.example` if present).
+    - Asks for your blog title and footer text, and writes them into the environment file.
 
-### 5. Default Password Change
-- The default user is `gosling` (as in James Gosling, the father of Java).
-- You can optionally set a new password. The script generates a bcrypt hash and updates the database.
+4. **Default Password Change**
+    - The default user is `gosling` (as in James Gosling, the father of Java).
+    - You can optionally set a new password. The script generates a bcrypt hash and updates the database.
+
+5. **Ownership Adjustment (Optional)**
+    - If you choose to, the script will change the project directory owner to `www-data:www-data` – a crucial step for production security.
+
+### `start.sh` (run as `www-data`)
+This script **starts the backend and frontend services** in the background:
+
+- Checks Node.js version and Maven wrapper.
+- Starts the backend with `./mvnw spring-boot:run` (logs → `backend.log`).
+- Installs frontend dependencies (`npm install`) and starts the Vite dev server (logs → `frontend.log`).
+- Saves process PIDs to `backend.pid` and `frontend.pid` for easy management.
 
 ---
 
-## Running the Services Manually (if you skipped auto‑start)
+## Running the Services Manually (if you prefer)
 
-After setup, you can start the services yourself:
+After configuration, you can also start the services yourself without using `start.sh`:
 
 ### Backend (Spring Boot)
 ```bash
@@ -120,9 +131,9 @@ The frontend will be available at http://localhost:5173 (or the port shown in th
 
 ---
 
-## Stopping the Services (if started with auto‑launch)
+## Stopping the Services (if started with `start.sh`)
 
-If you used the auto‑launch option, the processes run in the background.  
+If you used `start.sh`, the processes run in the background.  
 To stop them:
 
 ```bash
@@ -161,7 +172,8 @@ You can change the password for user `gosling` at any time:
 ## Troubleshooting
 
 ### Node.js version not supported
-The script checks for Node.js 20.19+ or 22.12+. If yours is older, follow the printed instructions to upgrade or use `nvm`.
+The configuration script checks for Node.js 20.19+ or 22.12+. If yours is older, follow the printed instructions to upgrade or use `nvm`.  
+The start script will also perform this check and refuse to run if Node.js is missing or unsupported.
 
 ### Docker container fails to start
 Port 3306 might already be in use. Stop any local MySQL service or change the port mapping manually.
@@ -173,6 +185,13 @@ Port 3306 might already be in use. Stop any local MySQL service or change the po
 
 ### Frontend dependencies fail to install
 Make sure you have a working internet connection. You can also try running `npm install` manually inside the `front` folder to see detailed errors.
+
+### Permission denied when running `start.sh`
+Make sure you run it with the correct user:
+```bash
+sudo -u www-data ./start.sh
+```
+Also ensure that the project files are owned by `www-data` (or at least readable). The configuration script can do this for you if you answered "yes" to the ownership question.
 
 ---
 
@@ -199,4 +218,4 @@ And because typing `sudo make me a website` is way more fun than clicking throug
 
 ---
 
-**Now go ahead, run `./setup.sh`, and start writing!**
+**Now go ahead, run `sudo ./configure.sh`, then `sudo -u www-data ./start.sh`, and start writing!**
