@@ -314,7 +314,7 @@ else
 fi
 
 # ============================================================
-# 5. 调整文件所有权
+# 5. 调整文件所有权 (System Level Fix Added Here)
 # ============================================================
 echo -e "\n${YELLOW}[5/5] Adjusting file ownership for production...${NC}"
 read -p "Do you want to change project directory ownership to www-data? (y/n): " CHOWN_DIR
@@ -335,6 +335,16 @@ if id "www-data" &>/dev/null; then
     mkdir -p .m2-repo
     chown www-data:www-data .m2-repo
     echo -e "${GREEN}✔ Created .m2-repo for Maven local repository.${NC}"
+
+    # === [SYSTEM FIX] 创建 www-data 的 Home Maven 目录 ===
+    # 解决后端报错: mkdir: cannot create directory ‘/var/www/.m2’: Permission denied
+    if [ -d "/var/www" ]; then
+        echo -e "${YELLOW}...Fixing system-level Maven permissions for www-data...${NC}"
+        mkdir -p /var/www/.m2
+        chown -R www-data:www-data /var/www/.m2
+        echo -e "${GREEN}✔ System Fix: Created /var/www/.m2 and set owner to www-data.${NC}"
+    fi
+    # ====================================================
 fi
 
 # ============================================================
