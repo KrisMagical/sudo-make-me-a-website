@@ -198,6 +198,7 @@ echo -e "${GREEN}✔ Database configuration updated.${NC}"
 # ============================================================
 echo -e "\n${YELLOW}[2/5] Handling Initial Data...${NC}"
 if [ -f "$DATA_SQL_SOURCE" ]; then
+    # 先复制文件到目标位置，后续在第4步修改目标文件
     cp "$DATA_SQL_SOURCE" "$DATA_SQL_DEST"
     echo -e "${GREEN}✔ data.sql detected and moved to resources for auto-import.${NC}"
 else
@@ -242,31 +243,23 @@ echo "http://localhost:8080" > .backend-port
 echo -e "${GREEN}✔ Frontend configured.${NC}"
 
 # ============================================================
-# 4. 修改默认用户凭证（用户名/密码）
+# 4. 修改默认用户凭证 (通过修改 data.sql 实现)
 # ============================================================
 echo -e "\n${YELLOW}[4/6] Default User Credentials Configuration...${NC}"
-echo -e "Default user: ${CYAN}gosling${NC}"
-read -p "Do you want to change the default user's username or password? (y/n): " CHANGE_CRED
+echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
 
-if [[ "$CHANGE_CRED" == "y" || "$CHANGE_CRED" == "Y" ]]; then
-    # 获取当前用户的 ID
-    CURRENT_USERNAME="gosling"
-    USER_ID=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -se "SELECT id FROM users WHERE username='$CURRENT_USERNAME';" 2>/dev/null)
-    if [ -z "$USER_ID" ]; then
-        echo -e "${RED}✘ Default user 'gosling' not found in database. Cannot update credentials.${NC}"
-    else
-        # 询问新用户名
+# 检查目标文件是否存在
+if [ ! -f "$DATA_SQL_DEST" ]; then
+    echo -e "${RED}✘ Target data.sql not found at $DATA_SQL_DEST. Skipping credential update.${NC}"
+else
+    read -p "Do you want to change the default user's username or password? (y/n): " CHANGE_CRED
+
+    if [[ "$CHANGE_CRED" == "y" || "$CHANGE_CRED" == "Y" ]]; then
+        # 1. 获取新用户名
         read -p "Enter new username (press Enter to keep 'gosling'): " NEW_USERNAME
-        if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
-            # 检查新用户名是否已被占用
-            EXISTING=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -se "SELECT id FROM users WHERE username='$NEW_USERNAME' AND id != $USER_ID;" 2>/dev/null)
-            if [ -n "$EXISTING" ]; then
-                echo -e "${RED}✘ Username '$NEW_USERNAME' already exists. Aborting credential update.${NC}"
-                exit 1
-            fi
-        fi
-
-        # 询问是否修改密码
+        NEW_USERNAME=${NEW_USERNAME:-gosling}
+        
+        # 2. 获取新密码并生成 Hash
         read -p "Do you want to change the password? (y/n): " CHANGE_PASS
         if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]]; then
             while true; do
@@ -285,58 +278,46 @@ if [[ "$CHANGE_CRED" == "y" || "$CHANGE_CRED" == "Y" ]]; then
 
             echo -e "${YELLOW}...Generating password hash...${NC}"
 
+            HASH=""
             if command -v htpasswd &>/dev/null; then
                 HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
-                if [[ -z "$HASH" ]]; then
-                    echo -e "${YELLOW}htpasswd BCrypt failed, falling back to Python...${NC}"
-                    FALLBACK_HASH=1
-                fi
             fi
 
-            if [[ -n "$FALLBACK_HASH" ]] || ! command -v htpasswd &>/dev/null; then
+            if [[ -z "$HASH" ]]; then
                 if command -v python3 &>/dev/null; then
                     HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
                 elif command -v python &>/dev/null; then
                     HASH=$(python -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
                 else
-                    echo -e "${RED}✘ No BCrypt tool found. Please install:${NC}"
-                    echo -e "  ${YELLOW}sudo apt install apache2-utils   # for htpasswd${NC}"
-                    echo -e "  ${YELLOW}pip install bcrypt              # for Python${NC}"
-                    echo -e "${CYAN}You can manually update password later using SQL:${NC}"
-                    echo "UPDATE users SET password='bcrypt_hash' WHERE username='gosling';"
+                    echo -e "${RED}✘ No BCrypt tool found (htpasswd/python). Skipping password update.${NC}"
                 fi
             fi
         fi
 
-        # 构建更新 SQL
-        UPDATE_SQL="UPDATE users SET "
-        UPDATES=()
-        if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
-            UPDATES+=("username='$NEW_USERNAME'")
-        fi
-        if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]] && [ -n "$HASH" ]; then
-            UPDATES+=("password='$HASH'")
+        # 3. 修改 data.sql 文件
+        echo -e "${YELLOW}...Updating data.sql with new credentials...${NC}"
+        
+        # 默认值 (来自原始 data.sql)
+        DEFAULT_USER_VAL="gosling"
+        DEFAULT_HASH_VAL='\$2a\$12\$zBfG6tE.mgR28EON4eKQqeLJVwLn.aL5e213vvar8tA4fLcVFcJ1q'
+
+        # 替换用户名
+        if [ "$NEW_USERNAME" != "$DEFAULT_USER_VAL" ]; then
+            run_sed "s|\"${DEFAULT_USER_VAL}\"|\"${NEW_USERNAME}\"|g" "$DATA_SQL_DEST"
+            echo -e "${GREEN}✔ Username updated to '${NEW_USERNAME}' in data.sql.${NC}"
         fi
 
-        if [ ${#UPDATES[@]} -gt 0 ]; then
-            UPDATE_SQL+=$(IFS=,; echo "${UPDATES[*]}")
-            UPDATE_SQL+=" WHERE username='$CURRENT_USERNAME';"
-
-            echo -e "${YELLOW}...Applying credential update...${NC}"
-            if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$UPDATE_SQL" 2>/dev/null; then
-                echo -e "${GREEN}✔ User credentials updated successfully.${NC}"
-                if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
-                    echo -e "${GREEN}   New username: $NEW_USERNAME${NC}"
-                fi
-            else
-                echo -e "${RED}✘ Failed to update credentials. Check database connection or constraints.${NC}"
-            fi
-        else
-            echo -e "${CYAN}No changes were made.${NC}"
+        # 替换密码 Hash
+        if [ -n "$HASH" ]; then
+            # 转义新 Hash 中的 $ 符号，防止 sed 解析错误
+            ESCAPED_NEW_HASH=$(echo "$HASH" | sed 's/\$/\\$/g')
+            run_sed "s|${DEFAULT_HASH_VAL}|${ESCAPED_NEW_HASH}|g" "$DATA_SQL_DEST"
+            echo -e "${GREEN}✔ Password hash updated in data.sql.${NC}"
         fi
+        
+    else
+        echo -e "${CYAN}Using default credentials (username: gosling).${NC}"
     fi
-else
-    echo -e "${CYAN}Using default credentials (username: gosling, password unchanged).${NC}"
 fi
 
 # ============================================================
