@@ -243,7 +243,7 @@ echo "http://localhost:8080" > .backend-port
 echo -e "${GREEN}✔ Frontend configured.${NC}"
 
 # ============================================================
-# 4. 修改默认用户凭证 (通过修改 data.sql 实现)
+# 4. 修改默认用户凭证
 # ============================================================
 echo -e "\n${YELLOW}[4/6] Default User Credentials Configuration...${NC}"
 echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
@@ -260,6 +260,7 @@ else
         NEW_USERNAME=${NEW_USERNAME:-gosling}
         
         # 2. 获取新密码并生成 Hash
+        NEW_PASS_HASH=""
         read -p "Do you want to change the password? (y/n): " CHANGE_PASS
         if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]]; then
             while true; do
@@ -270,7 +271,7 @@ else
                 if [[ "$NEW_PASS1" != "$NEW_PASS2" ]]; then
                     echo -e "${RED}✘ Passwords do not match. Please try again.${NC}"
                 elif [[ -z "$NEW_PASS1" ]]; then
-                    echo -e "${RED}✘ Password cannot be empty. Please try again.${NC}"
+                    echo -e "${RED}✘ Password cannot be empty.${NC}"
                 else
                     break
                 fi
@@ -278,41 +279,34 @@ else
 
             echo -e "${YELLOW}...Generating password hash...${NC}"
 
-            HASH=""
-            if command -v htpasswd &>/dev/null; then
-                HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
+            if command -v python3 &>/dev/null; then
+                NEW_PASS_HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
+            elif command -v htpasswd &>/dev/null; then
+                NEW_PASS_HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
             fi
 
-            if [[ -z "$HASH" ]]; then
-                if command -v python3 &>/dev/null; then
-                    HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-                elif command -v python &>/dev/null; then
-                    HASH=$(python -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-                else
-                    echo -e "${RED}✘ No BCrypt tool found (htpasswd/python). Skipping password update.${NC}"
-                fi
+            if [[ -z "$NEW_PASS_HASH" ]]; then
+                echo -e "${RED}✘ No BCrypt tool found. Password will NOT be updated.${NC}"
             fi
         fi
 
-        # 3. 修改 data.sql 文件
-        echo -e "${YELLOW}...Updating data.sql with new credentials...${NC}"
+        # 3. 追加 SQL UPDATE 语句到文件末尾
+        echo -e "${YELLOW}...Appending UPDATE statement to data.sql...${NC}"
         
-        # 默认值 (来自原始 data.sql)
-        DEFAULT_USER_VAL="gosling"
-        DEFAULT_HASH_VAL='\$2a\$12\$zBfG6tE.mgR28EON4eKQqeLJVwLn.aL5e213vvar8tA4fLcVFcJ1q'
-
-        # 替换用户名
-        if [ "$NEW_USERNAME" != "$DEFAULT_USER_VAL" ]; then
-            run_sed "s|\"${DEFAULT_USER_VAL}\"|\"${NEW_USERNAME}\"|g" "$DATA_SQL_DEST"
-            echo -e "${GREEN}✔ Username updated to '${NEW_USERNAME}' in data.sql.${NC}"
-        fi
-
-        # 替换密码 Hash
-        if [ -n "$HASH" ]; then
-            # 转义新 Hash 中的 $ 符号，防止 sed 解析错误
-            ESCAPED_NEW_HASH=$(echo "$HASH" | sed 's/\$/\\$/g')
-            run_sed "s|${DEFAULT_HASH_VAL}|${ESCAPED_NEW_HASH}|g" "$DATA_SQL_DEST"
-            echo -e "${GREEN}✔ Password hash updated in data.sql.${NC}"
+        # 构造 SQL 语句
+        echo "" >> "$DATA_SQL_DEST"
+        echo "-- Configured by script: Force update admin credentials" >> "$DATA_SQL_DEST"
+        
+        if [[ -n "$NEW_PASS_HASH" ]]; then
+            # 同时更新用户名和密码
+            echo "UPDATE users SET username = '${NEW_USERNAME}', password = '${NEW_PASS_HASH}' WHERE id = 1;" >> "$DATA_SQL_DEST"
+            echo -e "${GREEN}✔ data.sql updated: User '${NEW_USERNAME}' password reset command appended.${NC}"
+        elif [[ "$NEW_USERNAME" != "gosling" ]]; then
+            # 只更新用户名
+            echo "UPDATE users SET username = '${NEW_USERNAME}' WHERE id = 1;" >> "$DATA_SQL_DEST"
+            echo -e "${GREEN}✔ data.sql updated: Username changed to '${NEW_USERNAME}'.${NC}"
+        else
+            echo -e "${CYAN}No changes required.${NC}"
         fi
         
     else
