@@ -327,17 +327,17 @@ fi
 # ============================================================
 echo -e "\n${YELLOW}[5/6] Installing dependencies as root...${NC}"
 
-# 前端依赖
-echo -e "${YELLOW}...Installing frontend dependencies...${NC}"
+# 前端依赖与构建
+echo -e "${YELLOW}...Installing frontend dependencies & Building...${NC}"
 cd front || exit
-# 显式指定缓存位置，确保 root 也有地方写缓存
 export npm_config_cache="$(pwd)/../.npm-cache"
 npm install > ../frontend-install.log 2>&1
+npm run build >> ../frontend-install.log 2>&1
 if [ $? -ne 0 ]; then
-    echo -e "${RED}✘ npm install failed. Check frontend-install.log${NC}"
+    echo -e "${RED}✘ Frontend build failed. Check frontend-install.log${NC}"
     exit 1
 fi
-echo -e "${GREEN}✔ Frontend dependencies installed.${NC}"
+echo -e "${GREEN}✔ Frontend built successfully (dist/ created).${NC}"
 cd ..
 
 # 后端 Maven 依赖
