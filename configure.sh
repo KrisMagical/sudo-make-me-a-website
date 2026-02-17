@@ -314,47 +314,14 @@ else
 fi
 
 # ============================================================
-# 5. 调整文件所有权 (System Level Fix Added Here)
+# 5. 安装依赖
 # ============================================================
-echo -e "\n${YELLOW}[5/5] Adjusting file ownership for production...${NC}"
-read -p "Do you want to change project directory ownership to www-data? (y/n): " CHOWN_DIR
-if [[ "$CHOWN_DIR" == "y" || "$CHOWN_DIR" == "Y" ]]; then
-    if id "www-data" &>/dev/null; then
-        chown -R www-data:www-data .
-        echo -e "${GREEN}✔ Ownership changed to www-data.${NC}"
-    else
-        echo -e "${RED}✘ User www-data does not exist on this system. Skipping.${NC}"
-    fi
-fi
-
-if id "www-data" &>/dev/null; then
-    mkdir -p .npm-cache
-    chown www-data:www-data .npm-cache
-    echo -e "${GREEN}✔ Created .npm-cache for www-data.${NC}"
-
-    mkdir -p .m2-repo
-    chown www-data:www-data .m2-repo
-    echo -e "${GREEN}✔ Created .m2-repo for Maven local repository.${NC}"
-
-    # === [SYSTEM FIX] 创建 www-data 的 Home Maven 目录 ===
-    # 解决后端报错: mkdir: cannot create directory ‘/var/www/.m2’: Permission denied
-    if [ -d "/var/www" ]; then
-        echo -e "${YELLOW}...Fixing system-level Maven permissions for www-data...${NC}"
-        mkdir -p /var/www/.m2
-        chown -R www-data:www-data /var/www/.m2
-        echo -e "${GREEN}✔ System Fix: Created /var/www/.m2 and set owner to www-data.${NC}"
-    fi
-    # ====================================================
-fi
-
-# ============================================================
-# 6. 安装依赖 
-# ============================================================
-echo -e "\n${YELLOW}[6/6] Installing dependencies (this may take a few minutes)...${NC}"
+echo -e "\n${YELLOW}[5/6] Installing dependencies as root...${NC}"
 
 # 前端依赖
 echo -e "${YELLOW}...Installing frontend dependencies...${NC}"
 cd front || exit
+# 显式指定缓存位置，确保 root 也有地方写缓存
 export npm_config_cache="$(pwd)/../.npm-cache"
 npm install > ../frontend-install.log 2>&1
 if [ $? -ne 0 ]; then
@@ -367,6 +334,7 @@ cd ..
 # 后端 Maven 依赖
 echo -e "${YELLOW}...Downloading backend dependencies (Maven)...${NC}"
 cd backend || exit
+# 显式指定 Maven 本地仓库路径
 export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/../.m2-repo"
 ./mvnw dependency:go-offline > ../backend-deps.log 2>&1
 if [ $? -ne 0 ]; then
@@ -377,11 +345,29 @@ echo -e "${GREEN}✔ Backend dependencies downloaded.${NC}"
 cd ..
 
 # ============================================================
+# 6. 权限
+# ============================================================
+echo -e "\n${YELLOW}[6/6] FINAL STEP: Adjusting all permissions for www-data...${NC}"
+
+if id "www-data" &>/dev/null; then
+    chown -R www-data:www-data .
+    chmod -R 775 .
+    echo -e "${GREEN}✔ Project ownership and permissions set to www-data:775.${NC}"
+
+    if [ -d "/var/www" ]; then
+        mkdir -p /var/www/.m2
+        chown -R www-data:www-data /var/www/.m2
+        echo -e "${GREEN}✔ System Fix: /var/www/.m2 is ready.${NC}"
+    fi
+else
+    echo -e "${RED}✘ User www-data not found. You may need to manual fix permissions.${NC}"
+fi
+
+# ============================================================
 # 完成
 # ============================================================
 echo -e "\n${BLUE}==============================================${NC}"
 echo -e "${GREEN}   CONFIGURATION COMPLETE.${NC}"
 echo -e "${BLUE}==============================================${NC}"
-echo -e "To start services as www-data, run:"
+echo -e "Now start services as www-data:"
 echo -e "  ${YELLOW}sudo -u www-data ./start.sh${NC}"
-echo -e "\n(If you used Docker, the database is already running in the background!)"
