@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  START SCRIPT | Run as www-data to launch backend & frontend
+#  START SCRIPT (Production Mode) | Run as www-data
 # ============================================================
 
 GREEN='\033[0;32m'
@@ -10,109 +10,20 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# -------------------------------------------------------------------
-#  Node.js 版本检查与安装指导
-# -------------------------------------------------------------------
-_print_node_install_instructions() {
-    echo -e "${CYAN}Recommended installation methods for your OS:${NC}"
-    if [[ "$(uname)" == "Darwin" ]]; then
-        echo -e "  ${YELLOW}brew install node@22${NC}"
-        echo -e "  ${YELLOW}brew link --overwrite node@22${NC}"
-        echo -e "${CYAN}Or download installer from https://nodejs.org${NC}"
-    elif [[ -f /etc/debian_version ]]; then
-        echo -e "  ${YELLOW}curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -${NC}"
-        echo -e "  ${YELLOW}sudo apt install -y nodejs${NC}"
-    elif [[ -f /etc/redhat-release ]]; then
-        echo -e "  ${YELLOW}curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -${NC}"
-        echo -e "  ${YELLOW}sudo yum install -y nodejs${NC}"
-    else
-        echo -e "  Please install Node.js 20.19+ or 22.12+ manually from https://nodejs.org"
-    fi
-    echo -e "${CYAN}Alternatively, you can use nvm (Node Version Manager):${NC}"
-    echo -e "  ${YELLOW}curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash${NC}"
-    echo -e "  ${YELLOW}# After installation, restart your terminal or run: source ~/.bashrc${NC}"
-    echo -e "  ${YELLOW}nvm install 20.19.0${NC}"
-    echo -e "  ${YELLOW}nvm use 20.19.0${NC}"
-    echo ""
-}
-
-_print_node_upgrade_instructions() {
-    if command -v nvm &>/dev/null; then
-        echo -e "${CYAN}You have nvm installed. Upgrade Node.js with:${NC}"
-        echo -e "  ${YELLOW}nvm install 20.19.0${NC}"
-        echo -e "  ${YELLOW}nvm alias default 20.19.0${NC}"
-        echo -e "  ${YELLOW}nvm use 20.19.0${NC}"
-        echo -e "${CYAN}Or install latest 22.x:${NC}"
-        echo -e "  ${YELLOW}nvm install 22${NC}"
-        echo -e "  ${YELLOW}nvm use 22${NC}"
-    else
-        echo -e "${CYAN}Recommended upgrade methods for your OS:${NC}"
-        _print_node_install_instructions
-    fi
-}
-
-check_node_version() {
-    if ! command -v node &>/dev/null; then
-        echo -e "${RED}✘ Node.js is not installed.${NC}"
-        echo -e "${YELLOW}Please install Node.js 20.19 or higher (LTS recommended) to run the frontend.${NC}"
-        echo ""
-        _print_node_install_instructions
-        return 1
-    fi
-
-    local node_version=$(node -v | sed 's/v//')
-    local major_version=$(echo "$node_version" | cut -d. -f1)
-    local minor_version=$(echo "$node_version" | cut -d. -f2)
-
-    local valid=0
-    if [[ $major_version -eq 20 && $minor_version -ge 19 ]]; then
-        valid=1
-    elif [[ $major_version -eq 22 && $minor_version -ge 12 ]]; then
-        valid=1
-    elif [[ $major_version -gt 22 ]]; then
-        valid=1
-    fi
-
-    if [[ $valid -eq 0 ]]; then
-        echo -e "${RED}✘ Node.js version $node_version is not supported.${NC}"
-        echo -e "${YELLOW}This project requires Node.js 20.19+ or 22.12+ (LTS recommended).${NC}"
-        echo ""
-        _print_node_upgrade_instructions
-        return 1
-    fi
-
-    echo -e "${GREEN}✔ Node.js version $node_version detected (OK).${NC}"
-    return 0
-}
-
-# -------------------------------------------------------------------
-#  Maven 包装器检查
-# -------------------------------------------------------------------
-_check_mvnw() {
-    if [ ! -f "backend/mvnw" ]; then
-        echo -e "${RED}✘ Maven wrapper (backend/mvnw) not found.${NC}"
-        echo -e "${YELLOW}Please ensure the project structure is correct.${NC}"
-        return 1
-    fi
-    chmod +x backend/mvnw
-    echo -e "${GREEN}✔ Maven wrapper found and executable.${NC}"
-    return 0
-}
-
 # Banner
 clear
 echo -e "${GREEN}"
-echo "  _____           _         "
-echo " / ____|         | |        "
-echo "| (___  _   _  __| | ___    "
-echo " \___ \| | | |/ _\` |/ _ \   "
-echo " ____) | |_| | (_| | (_) |  "
-echo "|_____/ \__,_|\__,_|\___/   "
+echo "   _____                _          "
+echo "  / ____|              | |         "
+echo " | (___  _   _   __| | ___    "
+echo "  \___ \| | | |/ _\` |/ _ \   "
+echo "  ____) | |_| | (_| | (_) |  "
+echo " |_____/ \__,_|\__,_|\___/    "
 echo -e "${NC}"
-echo -e "${BLUE}>> Service Startup Mode Initiated (Run as www-data)${NC}\n"
+echo -e "${BLUE}>> Production Startup Mode Initiated (Apache + Java)${NC}\n"
 
 # -------------------------------------------------------------------
-# 用户检查
+# 1. 用户检查
 # -------------------------------------------------------------------
 if [ "$(whoami)" != "www-data" ]; then
     echo -e "${RED}✘ This script must be run as www-data user.${NC}"
@@ -121,58 +32,64 @@ if [ "$(whoami)" != "www-data" ]; then
 fi
 
 # -------------------------------------------------------------------
-# 环境检查
+# 2. Maven 包装器检查
 # -------------------------------------------------------------------
-echo -e "${YELLOW}...Checking Node.js environment...${NC}"
-if ! check_node_version; then
-    echo -e "${RED}✘ Cannot start frontend due to Node.js issues.${NC}"
+if [ ! -f "backend/mvnw" ]; then
+    echo -e "${RED}✘ Maven wrapper (backend/mvnw) not found.${NC}"
     exit 1
 fi
+chmod +x backend/mvnw
 
-echo -e "${YELLOW}...Checking Maven wrapper...${NC}"
-if ! _check_mvnw; then
-    echo -e "${RED}✘ Cannot start backend due to missing mvnw.${NC}"
-    exit 1
+# -------------------------------------------------------------------
+# 3. 启动后端 (Spring Boot)
+# -------------------------------------------------------------------
+echo -e "${BLUE}...Starting Backend Service (Java API)...${NC}"
+
+# 检查是否已有旧进程运行，如果有则先关闭（可选，但推荐）
+if [ -f "backend.pid" ]; then
+    OLD_PID=$(cat backend.pid)
+    if ps -p $OLD_PID > /dev/null; then
+        echo -e "${YELLOW}...Stopping previous backend instance (PID: $OLD_PID)...${NC}"
+        kill $OLD_PID
+        sleep 2
+    fi
 fi
 
-# -------------------------------------------------------------------
-# 启动后端
-# -------------------------------------------------------------------
-echo -e "${BLUE}...Starting backend service with ./mvnw...${NC}"
-
-# 设置 Maven 本地仓库路径（必须与 configure.sh 中一致）
+# 设置 Maven 本地仓库路径（与 configure.sh 一致）
 export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/.m2-repo"
 mkdir -p "$(pwd)/.m2-repo"
 
 cd backend || exit
-chmod +x mvnw
+# 使用 nohup 后台运行 Java 后端
 nohup ./mvnw spring-boot:run > ../backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > ../backend.pid
-echo -e "${GREEN}✔ Backend started with PID: $BACKEND_PID (logs: backend.log)${NC}"
 cd ..
 
-# -------------------------------------------------------------------
-# 启动前端
-# -------------------------------------------------------------------
-echo -e "${BLUE}...Starting frontend service...${NC}"
-cd front || exit
-
-# 设置 npm 缓存目录
-export npm_config_cache="$(pwd)/../.npm-cache"
-mkdir -p "$npm_config_cache"
-
-# 不再需要安装依赖，直接启动
-nohup npm run dev > ../frontend.log 2>&1 &
-FRONTEND_PID=$!
-echo $FRONTEND_PID > ../frontend.pid
-echo -e "${GREEN}✔ Frontend started with PID: $FRONTEND_PID (logs: frontend.log)${NC}"
+if ps -p $BACKEND_PID > /dev/null; then
+    echo -e "${GREEN}✔ Backend started with PID: $BACKEND_PID${NC}"
+else
+    echo -e "${RED}✘ Backend failed to start. Check backend.log for details.${NC}"
+    exit 1
+fi
 
 # -------------------------------------------------------------------
-# 完成提示
+# 4. 前端状态确认 (Apache Mode)
 # -------------------------------------------------------------------
-echo -e "\n${CYAN}Services are running in the background.${NC}"
-echo -e "  Backend PID:  ${YELLOW}$BACKEND_PID${NC}  (stop with: kill $BACKEND_PID)"
-echo -e "  Frontend PID: ${YELLOW}$FRONTEND_PID${NC}  (stop with: kill $FRONTEND_PID)"
-echo -e "  Log files:    ${CYAN}backend.log, frontend.log${NC}"
-echo -e "\n${BLUE}To monitor output: tail -f backend.log${NC}"
+echo -e "\n${BLUE}...Frontend Status...${NC}"
+if [ -d "front/dist" ]; then
+    echo -e "${GREEN}✔ Frontend static files detected in front/dist/${NC}"
+    echo -e "${CYAN}ℹ Frontend is being served by Apache (Port 80/443).${NC}"
+else
+    echo -e "${RED}✘ Frontend 'dist' folder not found!${NC}"
+    echo -e "${YELLOW}Please run './configure.sh' or 'cd front && npm run build' first.${NC}"
+fi
+
+# -------------------------------------------------------------------
+# 5. 完成提示
+# -------------------------------------------------------------------
+echo -e "\n${CYAN}==============================================${NC}"
+echo -e "  Backend PID:  ${YELLOW}$BACKEND_PID${NC} (Log: backend.log)"
+echo -e "  Site URL:     ${GREEN}http://magiccodelab.com${NC}"
+echo -e "${CYAN}==============================================${NC}"
+echo -e "${BLUE}To monitor backend logs: tail -f backend.log${NC}"
