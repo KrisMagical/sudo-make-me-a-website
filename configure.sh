@@ -248,7 +248,6 @@ echo -e "${GREEN}✔ Frontend configured.${NC}"
 echo -e "\n${YELLOW}[4/6] Default User Credentials Configuration...${NC}"
 echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
 
-# 检查目标文件是否存在
 if [ ! -f "$DATA_SQL_DEST" ]; then
     echo -e "${RED}✘ Target data.sql not found at $DATA_SQL_DEST. Skipping credential update.${NC}"
 else
@@ -259,17 +258,15 @@ else
         read -p "Enter new username (press Enter to keep 'gosling'): " NEW_USERNAME
         NEW_USERNAME=${NEW_USERNAME:-gosling}
         
-        # 2. 获取新密码并生成 Hash
+        # 2. 获取新密码
         NEW_PASS_HASH=""
         read -p "Do you want to change the password? (y/n): " CHANGE_PASS
         if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]]; then
             while true; do
-                read -s -p "Enter new password: " NEW_PASS1
-                echo ""
-                read -s -p "Confirm new password: " NEW_PASS2
-                echo ""
+                read -s -p "Enter new password: " NEW_PASS1; echo ""
+                read -s -p "Confirm new password: " NEW_PASS2; echo ""
                 if [[ "$NEW_PASS1" != "$NEW_PASS2" ]]; then
-                    echo -e "${RED}✘ Passwords do not match. Please try again.${NC}"
+                    echo -e "${RED}✘ Passwords do not match.${NC}"
                 elif [[ -z "$NEW_PASS1" ]]; then
                     echo -e "${RED}✘ Password cannot be empty.${NC}"
                 else
@@ -278,27 +275,38 @@ else
             done
 
             echo -e "${YELLOW}...Generating password hash...${NC}"
-
-            if command -v python3 &>/dev/null; then
-                NEW_PASS_HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-            elif command -v htpasswd &>/dev/null; then
+            
+            # 优先级 1: htpasswd
+            if command -v htpasswd &>/dev/null; then
                 NEW_PASS_HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
+            
+            # 优先级 2: Python3
+            elif python3 -c "import bcrypt" &>/dev/null; then
+                NEW_PASS_HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
+            
+            # 优先级 3: 尝试自动安装 htpasswd
+            elif [[ -f /etc/debian_version ]]; then
+                echo -e "${YELLOW}Missing hash tools. Installing apache2-utils...${NC}"
+                apt-get update -qq && apt-get install -y apache2-utils >/dev/null 2>&1
+                if command -v htpasswd &>/dev/null; then
+                    NEW_PASS_HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
+                fi
             fi
 
             if [[ -z "$NEW_PASS_HASH" ]]; then
-                echo -e "${RED}✘ No BCrypt tool found. Password will NOT be updated.${NC}"
+                echo -e "${RED}✘ Failed to generate hash. Please run: sudo apt install apache2-utils${NC}"
             fi
         fi
 
-        # 3. 追加 SQL UPDATE 语句到文件末尾
+        # 3. 追加 SQL UPDATE 语句
         echo -e "${YELLOW}...Appending UPDATE statement to data.sql...${NC}"
         
-        # 构造 SQL 语句
-        echo "" >> "$DATA_SQL_DEST"
+        sed -i -e '$a\' "$DATA_SQL_DEST"
+
         echo "-- Configured by script: Force update admin credentials" >> "$DATA_SQL_DEST"
         
         if [[ -n "$NEW_PASS_HASH" ]]; then
-            # 同时更新用户名和密码
+            # 更新用户名和密码
             echo "UPDATE users SET username = '${NEW_USERNAME}', password = '${NEW_PASS_HASH}' WHERE id = 1;" >> "$DATA_SQL_DEST"
             echo -e "${GREEN}✔ data.sql updated: User '${NEW_USERNAME}' password reset command appended.${NC}"
         elif [[ "$NEW_USERNAME" != "gosling" ]]; then
