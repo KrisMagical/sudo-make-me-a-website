@@ -242,75 +242,101 @@ echo "http://localhost:8080" > .backend-port
 echo -e "${GREEN}✔ Frontend configured.${NC}"
 
 # ============================================================
-# 4. 修改默认用户密码
+# 4. 修改默认用户凭证（用户名/密码）
 # ============================================================
-echo -e "\n${YELLOW}[4/5] Default User Password Configuration...${NC}"
+echo -e "\n${YELLOW}[4/6] Default User Credentials Configuration...${NC}"
 echo -e "Default user: ${CYAN}gosling${NC}"
-read -p "Do you want to change the default user password? (y/n): " CHANGE_PASS
+read -p "Do you want to change the default user's username or password? (y/n): " CHANGE_CRED
 
-if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]]; then
-    while true; do
-        read -s -p "Enter new password for user 'gosling': " NEW_PASS1
-        echo ""
-        read -s -p "Confirm new password: " NEW_PASS2
-        echo ""
-
-        if [[ "$NEW_PASS1" != "$NEW_PASS2" ]]; then
-            echo -e "${RED}✘ Passwords do not match. Please try again.${NC}"
-        elif [[ -z "$NEW_PASS1" ]]; then
-            echo -e "${RED}✘ Password cannot be empty. Please try again.${NC}"
-        else
-            break
+if [[ "$CHANGE_CRED" == "y" || "$CHANGE_CRED" == "Y" ]]; then
+    # 获取当前用户的 ID
+    CURRENT_USERNAME="gosling"
+    USER_ID=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -se "SELECT id FROM users WHERE username='$CURRENT_USERNAME';" 2>/dev/null)
+    if [ -z "$USER_ID" ]; then
+        echo -e "${RED}✘ Default user 'gosling' not found in database. Cannot update credentials.${NC}"
+    else
+        # 询问新用户名
+        read -p "Enter new username (press Enter to keep 'gosling'): " NEW_USERNAME
+        if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
+            # 检查新用户名是否已被占用
+            EXISTING=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -se "SELECT id FROM users WHERE username='$NEW_USERNAME' AND id != $USER_ID;" 2>/dev/null)
+            if [ -n "$EXISTING" ]; then
+                echo -e "${RED}✘ Username '$NEW_USERNAME' already exists. Aborting credential update.${NC}"
+                exit 1
+            fi
         fi
-    done
 
-    echo -e "${YELLOW}...Generating password hash...${NC}"
+        # 询问是否修改密码
+        read -p "Do you want to change the password? (y/n): " CHANGE_PASS
+        if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]]; then
+            while true; do
+                read -s -p "Enter new password: " NEW_PASS1
+                echo ""
+                read -s -p "Confirm new password: " NEW_PASS2
+                echo ""
+                if [[ "$NEW_PASS1" != "$NEW_PASS2" ]]; then
+                    echo -e "${RED}✘ Passwords do not match. Please try again.${NC}"
+                elif [[ -z "$NEW_PASS1" ]]; then
+                    echo -e "${RED}✘ Password cannot be empty. Please try again.${NC}"
+                else
+                    break
+                fi
+            done
 
-    if command -v htpasswd &>/dev/null; then
-        HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
-        if [[ -z "$HASH" ]]; then
-            echo -e "${YELLOW}htpasswd BCrypt failed, falling back to Python...${NC}"
-            FALLBACK_HASH=1
+            echo -e "${YELLOW}...Generating password hash...${NC}"
+
+            if command -v htpasswd &>/dev/null; then
+                HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
+                if [[ -z "$HASH" ]]; then
+                    echo -e "${YELLOW}htpasswd BCrypt failed, falling back to Python...${NC}"
+                    FALLBACK_HASH=1
+                fi
+            fi
+
+            if [[ -n "$FALLBACK_HASH" ]] || ! command -v htpasswd &>/dev/null; then
+                if command -v python3 &>/dev/null; then
+                    HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
+                elif command -v python &>/dev/null; then
+                    HASH=$(python -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
+                else
+                    echo -e "${RED}✘ No BCrypt tool found. Please install:${NC}"
+                    echo -e "  ${YELLOW}sudo apt install apache2-utils   # for htpasswd${NC}"
+                    echo -e "  ${YELLOW}pip install bcrypt              # for Python${NC}"
+                    echo -e "${CYAN}You can manually update password later using SQL:${NC}"
+                    echo "UPDATE users SET password='bcrypt_hash' WHERE username='gosling';"
+                fi
+            fi
         fi
-    fi
 
-    if [[ -n "$FALLBACK_HASH" ]] || ! command -v htpasswd &>/dev/null; then
-        if command -v python3 &>/dev/null; then
-            HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-        elif command -v python &>/dev/null; then
-            HASH=$(python -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-        else
-            echo -e "${RED}✘ No BCrypt tool found. Please install:${NC}"
-            echo -e "  ${YELLOW}sudo apt install apache2-utils   # for htpasswd${NC}"
-            echo -e "  ${YELLOW}pip install bcrypt              # for Python${NC}"
-            echo -e "${CYAN}ℹ You can manually update password later using SQL:${NC}"
-            echo "UPDATE users SET password='bcrypt_hash' WHERE username='gosling';"
+        # 构建更新 SQL
+        UPDATE_SQL="UPDATE users SET "
+        UPDATES=()
+        if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
+            UPDATES+=("username='$NEW_USERNAME'")
         fi
-    fi
+        if [[ "$CHANGE_PASS" == "y" || "$CHANGE_PASS" == "Y" ]] && [ -n "$HASH" ]; then
+            UPDATES+=("password='$HASH'")
+        fi
 
-    if [[ -n "$HASH" ]]; then
-        echo -e "${GREEN}✔ Password hash generated.${NC}"
-        TMP_SQL="update-password.sql"
-        cat > "$TMP_SQL" << EOF
-UPDATE users SET password='$HASH' WHERE username='gosling';
-EOF
-        echo -e "${YELLOW}...Applying password update...${NC}"
-        if [[ -n "$DB_PASS" ]]; then
-            mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$TMP_SQL"
-            if [ $? -eq 0 ]; then
-                echo -e "${GREEN}✔ Password updated successfully for user 'gosling'.${NC}"
+        if [ ${#UPDATES[@]} -gt 0 ]; then
+            UPDATE_SQL+=$(IFS=,; echo "${UPDATES[*]}")
+            UPDATE_SQL+=" WHERE username='$CURRENT_USERNAME';"
+
+            echo -e "${YELLOW}...Applying credential update...${NC}"
+            if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$UPDATE_SQL" 2>/dev/null; then
+                echo -e "${GREEN}✔ User credentials updated successfully.${NC}"
+                if [ -n "$NEW_USERNAME" ] && [ "$NEW_USERNAME" != "$CURRENT_USERNAME" ]; then
+                    echo -e "${GREEN}   New username: $NEW_USERNAME${NC}"
+                fi
             else
-                echo -e "${RED}✘ Failed to update password. Please check database connection.${NC}"
+                echo -e "${RED}✘ Failed to update credentials. Check database connection or constraints.${NC}"
             fi
         else
-            echo -e "${RED}✘ Database password not available. Cannot update password.${NC}"
+            echo -e "${CYAN}No changes were made.${NC}"
         fi
-        rm -f "$TMP_SQL"
-    else
-        echo -e "${YELLOW}Password not updated. You can manually update it later.${NC}"
     fi
 else
-    echo -e "${CYAN}ℹ Using default password for user 'gosling'.${NC}"
+    echo -e "${CYAN}Using default credentials (username: gosling, password unchanged).${NC}"
 fi
 
 # ============================================================
