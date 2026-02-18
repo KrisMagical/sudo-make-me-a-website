@@ -14,12 +14,14 @@ const page = ref<PageDto | null>(null)
 const allPages = ref<PageDto[]>([])
 const loading = ref(false)
 const saving = ref(false)
-const searchTerm = ref('') // 用于搜索可插入页面
+const searchTerm = ref('')
+
+// 添加 Editor 组件的引用
+const editorRef = ref<InstanceType<typeof Editor>>()
 
 const isEditing = computed(() => route.name === 'admin-page-edit')
 const indentedPages = computed(() => buildIndentedList(allPages.value, page.value?.id))
 
-// 过滤可插入的页面（排除自己 + 搜索）
 const availablePagesToLink = computed(() => {
   if (!allPages.value) return []
   return allPages.value.filter(p =>
@@ -49,7 +51,6 @@ const fetchData = async () => {
         images: [],
         videos: []
       }
-      // 新建页面时，默认 orderIndex 为根节点末尾
       const rootPages = pagesList.filter(p => p.parentId === null)
       if (rootPages.length > 0) {
         const maxOrder = Math.max(...rootPages.map(p => p.orderIndex))
@@ -63,7 +64,6 @@ const fetchData = async () => {
   }
 }
 
-// 当手动更改 Parent 时，自动建议 Order Index
 const handleParentChange = () => {
   if (!page.value) return
   const siblings = allPages.value.filter(
@@ -82,18 +82,15 @@ const generateSlug = () => {
     .replace(/^-|-$/g, '')
 }
 
-// 插入页面链接（触发 syncPageStructure）
 const insertPageLink = (targetPage: PageDto) => {
   if (!page.value) return
-  const linkText = ` [${targetPage.title}](/pages/${targetPage.slug}) ` // 前后加空格防止粘连
-  const textarea = document.querySelector('textarea') // 粗暴获取，建议给 Editor 加 id
-
+  const linkText = ` [${targetPage.title}](/pages/${targetPage.slug}) `
+  const textarea = document.querySelector('textarea')
   if (textarea && textarea.selectionStart !== undefined) {
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
     const text = page.value.content || ''
     page.value.content = text.substring(0, start) + linkText + text.substring(end)
-
     setTimeout(() => {
       textarea.focus()
       textarea.selectionStart = textarea.selectionEnd = start + linkText.length
@@ -111,19 +108,28 @@ const save = async () => {
   }
   saving.value = true
   try {
+    let savedPage: PageDto
     if (isEditing.value) {
       await pagesApi.update(page.value.slug, page.value)
+      savedPage = page.value // 同上，假设 update 返回更新后的对象
       notify('Page updated & structure synced', 'success')
     } else {
-      const newPage = await pagesApi.create(page.value)
+      savedPage = await pagesApi.create(page.value)
       notify('Page created & structure synced', 'success')
-      // 跳转到编辑页（避免留在新建状态）
-      await router.push({ name: 'admin-page-edit', params: { slug: newPage.slug } })
+      // 跳转到编辑页
+      await router.push({ name: 'admin-page-edit', params: { slug: savedPage.slug } })
+      // 更新本地 page 数据
+      page.value = savedPage
     }
+
+    // 处理暂存图片上传（需要真实的 page.id 和 page.slug）
+    if (editorRef.value && savedPage && savedPage.id && savedPage.slug) {
+      await editorRef.value.processPendingUploads(savedPage.id, savedPage.slug)
+    }
+
     // 刷新数据以反映最新父子结构
     await fetchData()
   } catch (error: any) {
-    // 检查是否是认证错误
     if (error.response?.status === 401) {
       notify('Session expired. Please login again.', 'error')
       router.push('/admin/login')
@@ -211,6 +217,7 @@ onMounted(fetchData)
         </div>
 
         <Editor
+          ref="editorRef"
           v-model="page.content"
           owner-type="PAGE"
           :owner-id="page.id || 0"

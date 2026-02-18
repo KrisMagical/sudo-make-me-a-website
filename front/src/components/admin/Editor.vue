@@ -4,21 +4,20 @@ import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Youtube from '@tiptap/extension-youtube'
-import { Node } from '@tiptap/core' // Import Node for custom Iframe extension
+import { Node } from '@tiptap/core'
 import { ref, watch, onBeforeUnmount } from 'vue'
 import request from '@/utils/request'
 import { notify } from '@/utils/feedback'
-import { parseVideoUrl } from '@/utils/videoParser' // Import parser
+import { parseVideoUrl } from '@/utils/videoParser'
+import type { ImageDto } from '@/types/api'
 
 const addMath = () => {
   const formula = prompt('Enter LaTeX formula (e.g. E=mc^2)');
   if (!formula) return;
-  // 简单用 confirm 区分行内/行间：确定=行内，取消=行间
   const isInline = confirm('Inline formula? Click OK for inline, Cancel for display block.');
   const delimiter = isInline ? '\\(' : '\\[';
   const closing = isInline ? '\\)' : '\\]';
   const content = delimiter + formula + closing;
-  // 在光标位置插入文本
   editor.value?.chain().focus().insertContent({ type: 'text', text: content }).run();
 };
 
@@ -32,11 +31,14 @@ const props = defineProps<{
 const emit = defineEmits(['update:modelValue'])
 const fileInput = ref<HTMLInputElement | null>(null)
 
-// 1. Define a custom Iframe extension for Bilibili/Other embeds
+// 暂存图片队列：当 ownerId 无效时，先不真正上传，而是生成 blob URL 预览
+const pendingImages = ref<{ file: File, tempUrl: string }[]>([])
+
+// 自定义 Iframe 扩展（原有）
 const Iframe = Node.create({
   name: 'iframe',
   group: 'block',
-  atom: true, // It's a single unit, not containing text
+  atom: true,
   addOptions() {
     return {
       HTMLAttributes: {
@@ -55,7 +57,6 @@ const Iframe = Node.create({
     return [{ tag: 'iframe' }]
   },
   renderHTML({ HTMLAttributes }) {
-    // Wrap in a div for aspect ratio styling if needed, matching SmartContent style
     return ['div', { class: 'video-wrapper my-6 relative aspect-video w-full' }, ['iframe', HTMLAttributes]]
   },
 })
@@ -67,7 +68,7 @@ const editor = useEditor({
     Image.configure({ inline: true, HTMLAttributes: { class: 'max-w-full h-auto border border-zinc-200' } }),
     Link.configure({ openOnClick: false }),
     Youtube.configure({ width: 640, height: 360 }),
-    Iframe, // Add the custom extension
+    Iframe,
   ],
   editorProps: {
     attributes: {
@@ -79,55 +80,110 @@ const editor = useEditor({
   }
 })
 
-// 监听外部内容变化
 watch(() => props.modelValue, (val) => {
   if (editor.value && editor.value.getHTML() !== val) {
     editor.value.commands.setContent(val, false)
   }
 })
 
-// 图片上传逻辑
 const triggerImageUpload = () => fileInput.value?.click()
 
+// 修改后的图片上传处理
 const handleFileUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
 
-  const formData = new FormData()
-  formData.append('file', file)
+  // 生成临时预览 URL
+  const tempUrl = URL.createObjectURL(file)
 
-  try {
-    let url = ''
-    if (props.ownerType === 'POST') {
-      url = `/api/posts/${props.ownerId}/images`
-    } else if (props.ownerType === 'PAGE') {
-      if (!props.ownerSlug) {
-        throw new Error('ownerSlug is required for PAGE type')
-      }
-      url = `/api/pages/${props.ownerSlug}/images`
-    } else {
-      url = '/api/home/images'
+  // 插入编辑器（使用临时 URL）
+  editor.value?.chain().focus().setImage({ src: tempUrl }).run()
+
+  // 判断 ownerId 是否为有效数字（已保存的实体）
+  const isValidId = typeof props.ownerId === 'number' && props.ownerId > 0
+
+  if (isValidId) {
+    // 已有真实 ID，立即上传
+    try {
+      const realUrl = await uploadImage(file, tempUrl, props.ownerId as number, props.ownerSlug)
+      // 替换编辑器中的临时 URL 为真实 URL
+      replaceImageUrl(tempUrl, realUrl)
+      notify('Image uploaded successfully')
+    } catch (err) {
+      notify('Failed to upload image', 'error')
     }
-
-    const res = await request.post<any, { url: string }>(url, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-
-    editor.value?.chain().focus().setImage({ src: res.url }).run()
-    notify('Image uploaded successfully')
-  } catch (err) {
-    notify('Failed to upload image', 'error')
+  } else {
+    // 暂存，等待保存后上传
+    pendingImages.value.push({ file, tempUrl })
+    notify('Image will be uploaded after saving')
   }
 }
 
-// 2. Unified Video Insertion Logic
+// 上传单个图片，返回真实 URL
+const uploadImage = async (file: File, tempUrl: string, realOwnerId: number, realOwnerSlug?: string): Promise<string> => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  let url = ''
+  if (props.ownerType === 'POST') {
+    url = `/api/posts/${realOwnerId}/images`
+  } else if (props.ownerType === 'PAGE') {
+    if (!realOwnerSlug) throw new Error('ownerSlug required for PAGE')
+    url = `/api/pages/${realOwnerSlug}/images`
+  } else {
+    url = '/api/home/images'
+  }
+
+  const res = await request.post<any, ImageDto>(url, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return res.url
+}
+
+// 替换编辑器中的图片 URL
+const replaceImageUrl = (oldUrl: string, newUrl: string) => {
+  if (!editor.value) return
+  const { state } = editor.value
+  const tr = state.tr
+  let replaced = false
+  state.doc.descendants((node, pos) => {
+    if (node.type.name === 'image' && node.attrs.src === oldUrl) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: newUrl })
+      replaced = true
+    }
+  })
+  if (replaced) {
+    editor.value.view.dispatch(tr)
+  }
+  // 释放 blob URL 内存
+  URL.revokeObjectURL(oldUrl)
+}
+
+// 供父组件调用的方法：处理所有暂存图片
+const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
+  if (pendingImages.value.length === 0) return
+
+  for (const pending of pendingImages.value) {
+    try {
+      const realUrl = await uploadImage(pending.file, pending.tempUrl, realOwnerId, realOwnerSlug)
+      replaceImageUrl(pending.tempUrl, realUrl)
+    } catch (err) {
+      console.error('Failed to upload pending image:', err)
+      notify('Some images failed to upload', 'error')
+    }
+  }
+  pendingImages.value = []
+}
+
+defineExpose({
+  processPendingUploads
+})
+
 const addVideo = () => {
   const input = prompt('Enter Video URL (YouTube, Bilibili, Vimeo) or iframe code:')
   if (!input) return
 
-  // Check if user pasted raw iframe code
   if (input.trim().startsWith('<iframe')) {
-    // Basic extraction of src from iframe tag (simple regex)
     const srcMatch = input.match(/src=["'](.*?)["']/)
     if (srcMatch && srcMatch[1]) {
       editor.value?.chain().focus().insertContent({
@@ -135,21 +191,17 @@ const addVideo = () => {
         attrs: { src: srcMatch[1] }
       }).run()
     } else {
-       // Fallback: try to insert raw HTML if it's complex, though insertContent usually prefers nodes
-       editor.value?.chain().focus().insertContent(input).run()
+      editor.value?.chain().focus().insertContent(input).run()
     }
     return
   }
 
-  // Parse URL
   const videoInfo = parseVideoUrl(input)
 
   if (videoInfo) {
     if (videoInfo.provider === 'youtube') {
-      // Use Tiptap's native YouTube extension for best compatibility
       editor.value?.commands.setYoutubeVideo({ src: input })
     } else {
-      // Use our custom Iframe node for Bilibili/Vimeo
       editor.value?.chain().focus().insertContent({
         type: 'iframe',
         attrs: { src: videoInfo.embedUrl }
@@ -190,7 +242,6 @@ onBeforeUnmount(() => editor.value?.destroy())
 :deep(.prose img) {
   margin: 1rem 0;
 }
-/* Style for the custom iframe node in the editor */
 :deep(.video-wrapper) {
   background: #000;
   border-radius: 4px;

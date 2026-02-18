@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { postsApi } from '@/api/posts'
 import { categoriesApi } from '@/api/categories'
 import type { PostDetailDto, CategoryDto } from '@/types/api'
@@ -9,10 +9,14 @@ import MediaLibrary from '@/components/admin/MediaLibrary.vue'
 import { notify } from '@/utils/feedback'
 
 const route = useRoute()
+const router = useRouter()
 const categories = ref<CategoryDto[]>([])
 const post = ref<PostDetailDto | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+
+// 添加 Editor 组件的引用
+const editorRef = ref<InstanceType<typeof Editor>>()
 
 const isEditing = computed(() => route.name === 'admin-post-edit')
 const postId = computed(() => route.params.id || post.value?.id)
@@ -69,12 +73,24 @@ const save = async () => {
 
   saving.value = true
   try {
+    let savedPost: PostDetailDto
     if (isEditing.value) {
       await postsApi.update(post.value.id, categorySlug, post.value)
+      savedPost = post.value // 更新操作返回的是 void? 根据 api.ts 是 request.put，应该返回更新后的 PostDetailDto，假设它返回了
+      // 为了保险，重新获取一下最新数据（但更新操作通常返回更新后的对象）
       notify('Post updated successfully', 'success')
     } else {
-      await postsApi.create(categorySlug, post.value)
+      savedPost = await postsApi.create(categorySlug, post.value)
       notify('Post created successfully', 'success')
+      // 跳转到编辑页
+      await router.push({ name: 'admin-post-edit', params: { slug: savedPost.slug } })
+      // 重新获取 post 数据以更新 ID（因为 create 返回的应该包含 id）
+      post.value = savedPost
+    }
+
+    // 处理暂存图片上传
+    if (editorRef.value && post.value && post.value.id) {
+      await editorRef.value.processPendingUploads(post.value.id)
     }
   } catch (error) {
     notify(isEditing.value ? 'Failed to update post' : 'Failed to create post', 'error')
@@ -129,6 +145,7 @@ onMounted(fetchData)
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
           <Editor
+            ref="editorRef"
             v-model="post.content"
             owner-type="POST"
             :owner-id="post.id || 'new'"
