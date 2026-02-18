@@ -53,7 +53,7 @@ echo -e "${BLUE}>> Configuration Mode Initiated (Run as root)${NC}\n"
 # ============================================================
 # 1. 数据库配置
 # ============================================================
-echo -e "${YELLOW}[1/5] Database Configuration...${NC}"
+echo -e "${YELLOW}[1/7] Database Configuration...${NC}"
 
 DEFAULT_DB_NAME="local_database"
 DEFAULT_DB_USER="root"
@@ -196,7 +196,7 @@ echo -e "${GREEN}✔ Database configuration updated.${NC}"
 # ============================================================
 # 2. 数据初始化
 # ============================================================
-echo -e "\n${YELLOW}[2/5] Handling Initial Data...${NC}"
+echo -e "\n${YELLOW}[2/7] Handling Initial Data...${NC}"
 if [ -f "$DATA_SQL_SOURCE" ]; then
     # 先复制文件到目标位置，后续在第4步修改目标文件
     cp "$DATA_SQL_SOURCE" "$DATA_SQL_DEST"
@@ -208,7 +208,7 @@ fi
 # ============================================================
 # 3. 前端配置
 # ============================================================
-echo -e "\n${YELLOW}[3/5] Frontend Setup...${NC}"
+echo -e "\n${YELLOW}[3/7] Frontend Setup...${NC}"
 
 if [ ! -f "$FRONT_ENV" ]; then
     if [ -f "$FRONT_ENV_EXAMPLE" ]; then
@@ -245,7 +245,7 @@ echo -e "${GREEN}✔ Frontend configured.${NC}"
 # ============================================================
 # 4. 修改默认用户凭证
 # ============================================================
-echo -e "\n${YELLOW}[4/6] Default User Credentials Configuration...${NC}"
+echo -e "\n${YELLOW}[4/7] Default User Credentials Configuration...${NC}"
 echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
 
 if [ ! -f "$DATA_SQL_DEST" ]; then
@@ -325,7 +325,7 @@ fi
 # ============================================================
 # 5. 安装依赖
 # ============================================================
-echo -e "\n${YELLOW}[5/6] Installing dependencies as root...${NC}"
+echo -e "\n${YELLOW}[5/7] Installing dependencies as root...${NC}"
 
 # 前端依赖与构建
 echo -e "${YELLOW}...Installing frontend dependencies & Building...${NC}"
@@ -356,7 +356,7 @@ cd ..
 # ============================================================
 # 6. 权限
 # ============================================================
-echo -e "\n${YELLOW}[6/6] FINAL STEP: Adjusting all permissions for www-data...${NC}"
+echo -e "\n${YELLOW}[6/7] FINAL STEP: Adjusting all permissions for www-data...${NC}"
 
 if id "www-data" &>/dev/null; then
     chown -R www-data:www-data .
@@ -371,6 +371,92 @@ if id "www-data" &>/dev/null; then
 else
     echo -e "${RED}✘ User www-data not found. You may need to manual fix permissions.${NC}"
 fi
+
+# ============================================================
+# 7. 生成 Apache 虚拟主机配置（动态端口）
+# ============================================================
+echo -e "\n${YELLOW}[7/7] Generating Apache virtual host configuration...${NC}"
+
+find_available_port() {
+    local start_port=8080
+    local max_attempts=100
+    for ((port = start_port; port < start_port + max_attempts; port++)); do
+        if ! ss -tln | grep -q ":$port "; then
+            echo "$port"
+            return 0
+        fi
+    done
+    echo ""
+    return 1
+}
+
+BACKEND_PORT=$(find_available_port)
+if [ -z "$BACKEND_PORT" ]; then
+    echo -e "${RED}✘ Cannot find available port from 8080 to $((8080+99)). Please free a port and rerun.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✔ Available backend port detected: $BACKEND_PORT${NC}"
+
+echo "http://localhost:$BACKEND_PORT" > .backend-port
+echo -e "${GREEN}✔ .backend-port file created with port $BACKEND_PORT.${NC}"
+
+# Apache 站点配置文件路径
+APACHE_SITE_AVAILABLE="/etc/apache2/sites-available/magiccodelab.conf"
+
+# 生成配置内容
+cat > "$APACHE_SITE_AVAILABLE" <<EOF
+<VirtualHost *:80>
+    ServerName magiccodelab.com
+    ServerAdmin webmaster@magiccodelab.com
+
+    # 静态前端文件位置（由 npm run build 生成）
+    DocumentRoot /var/www/sudo-make-me-a-website/front/dist
+
+    <Directory /var/www/sudo-make-me-a-website/front/dist>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+
+        # SPA 路由重写（解决刷新 404）
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
+    </Directory>
+
+    # 代理设置
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyTimeout 300
+
+    # 动态后端端口
+    ProxyPass /login http://localhost:$BACKEND_PORT/login
+    ProxyPassReverse /login http://localhost:$BACKEND_PORT/login
+
+    ProxyPass /api http://localhost:$BACKEND_PORT/api
+    ProxyPassReverse /api http://localhost:$BACKEND_PORT/api
+
+    ProxyPass /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
+    ProxyPassReverse /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
+    ProxyPass /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
+    ProxyPassReverse /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
+
+    # 错误日志和访问日志
+    ErrorLog \${APACHE_LOG_DIR}/magiccodelab_error.log
+    CustomLog \${APACHE_LOG_DIR}/magiccodelab_access.log combined
+</VirtualHost>
+EOF
+
+echo -e "${GREEN}✔ Apache configuration generated at $APACHE_SITE_AVAILABLE${NC}"
+
+# 启用站点并重新加载 Apache
+a2ensite magiccodelab.conf
+a2dissite 000-default.conf 2>/dev/null
+systemctl reload apache2
+
+echo -e "${GREEN}✔ Apache site enabled and reloaded.${NC}"
 
 # ============================================================
 # 完成
