@@ -373,9 +373,16 @@ else
 fi
 
 # ============================================================
-# 7. 生成 Apache 虚拟主机配置（动态端口）
+# 7. 生成 Apache 虚拟主机配置（动态端口 + 自定义域名）
 # ============================================================
 echo -e "\n${YELLOW}[7/7] Generating Apache virtual host configuration...${NC}"
+
+# 获取用户域名
+echo -e "\n${YELLOW}Please enter your domain name (e.g., example.com) for Apache configuration.${NC}"
+echo -e "If you don't have a domain, you can use your server's IP address or the default 'magiccodelab.com'."
+read -p "Domain name [magiccodelab.com]: " DOMAIN
+DOMAIN=${DOMAIN:-magiccodelab.com}
+echo -e "${GREEN}✔ Using domain: $DOMAIN${NC}"
 
 find_available_port() {
     local start_port=8080
@@ -400,14 +407,14 @@ echo -e "${GREEN}✔ Available backend port detected: $BACKEND_PORT${NC}"
 echo "http://localhost:$BACKEND_PORT" > .backend-port
 echo -e "${GREEN}✔ .backend-port file created with port $BACKEND_PORT.${NC}"
 
-# Apache 站点配置文件路径
-APACHE_SITE_AVAILABLE="/etc/apache2/sites-available/magiccodelab.conf"
+# Apache 站点配置文件路径（基于域名）
+APACHE_SITE_AVAILABLE="/etc/apache2/sites-available/$DOMAIN.conf"
 
 # 生成配置内容
 cat > "$APACHE_SITE_AVAILABLE" <<EOF
 <VirtualHost *:80>
-    ServerName magiccodelab.com
-    ServerAdmin webmaster@magiccodelab.com
+    ServerName $DOMAIN
+    ServerAdmin webmaster@$DOMAIN
 
     # 静态前端文件位置（由 npm run build 生成）
     DocumentRoot /var/www/sudo-make-me-a-website/front/dist
@@ -443,16 +450,16 @@ cat > "$APACHE_SITE_AVAILABLE" <<EOF
     ProxyPass /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
     ProxyPassReverse /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
 
-    # 错误日志和访问日志
-    ErrorLog \${APACHE_LOG_DIR}/magiccodelab_error.log
-    CustomLog \${APACHE_LOG_DIR}/magiccodelab_access.log combined
+    # 错误日志和访问日志（使用域名区分）
+    ErrorLog \${APACHE_LOG_DIR}/${DOMAIN}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${DOMAIN}_access.log combined
 </VirtualHost>
 EOF
 
 echo -e "${GREEN}✔ Apache configuration generated at $APACHE_SITE_AVAILABLE${NC}"
 
 # 启用站点并重新加载 Apache
-a2ensite magiccodelab.conf
+a2ensite "$DOMAIN.conf"
 a2dissite 000-default.conf 2>/dev/null
 systemctl reload apache2
 
@@ -466,3 +473,4 @@ echo -e "${GREEN}   CONFIGURATION COMPLETE.${NC}"
 echo -e "${BLUE}==============================================${NC}"
 echo -e "Now start services as www-data:"
 echo -e "  ${YELLOW}sudo -u www-data ./start.sh${NC}"
+echo -e "\nYour site should be accessible at: http://$DOMAIN"
