@@ -34,6 +34,49 @@ const fileInput = ref<HTMLInputElement | null>(null)
 // 暂存图片队列：当 ownerId 无效时，先不真正上传，而是生成 blob URL 预览
 const pendingImages = ref<{ file: File, tempUrl: string }[]>([])
 
+// 图片压缩函数
+const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.8): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = (e) => {
+      const img = new Image()
+      img.src = e.target?.result as string
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width
+            width = maxWidth
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height
+            height = maxHeight
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            // 保持原文件名，类型尽量用原类型，但 canvas 可能输出 image/jpeg，这里保持原类型
+            const compressedFile = new File([blob], file.name, { type: file.type })
+            resolve(compressedFile)
+          } else {
+            reject(new Error('Compression failed'))
+          }
+        }, file.type, quality)
+      }
+      img.onerror = reject
+    }
+    reader.onerror = reject
+  })
+}
+
 // 自定义 Iframe 扩展（原有）
 const Iframe = Node.create({
   name: 'iframe',
@@ -88,13 +131,25 @@ watch(() => props.modelValue, (val) => {
 
 const triggerImageUpload = () => fileInput.value?.click()
 
-// 修改后的图片上传处理
+// 修改后的图片上传处理，加入压缩逻辑
 const handleFileUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
 
+  // 如果文件大于 2MB，进行压缩
+  let processedFile = file
+  if (file.size > 2 * 1024 * 1024) {
+    try {
+      processedFile = await compressImage(file)
+      notify('Large image compressed')
+    } catch (err) {
+      notify('Image compression failed, using original', 'error')
+      // 继续使用原文件
+    }
+  }
+
   // 生成临时预览 URL
-  const tempUrl = URL.createObjectURL(file)
+  const tempUrl = URL.createObjectURL(processedFile)
 
   // 插入编辑器（使用临时 URL）
   editor.value?.chain().focus().setImage({ src: tempUrl }).run()
@@ -105,7 +160,7 @@ const handleFileUpload = async (e: Event) => {
   if (isValidId) {
     // 已有真实 ID，立即上传
     try {
-      const realUrl = await uploadImage(file, tempUrl, props.ownerId as number, props.ownerSlug)
+      const realUrl = await uploadImage(processedFile, tempUrl, props.ownerId as number, props.ownerSlug)
       // 替换编辑器中的临时 URL 为真实 URL
       replaceImageUrl(tempUrl, realUrl)
       notify('Image uploaded successfully')
@@ -114,7 +169,7 @@ const handleFileUpload = async (e: Event) => {
     }
   } else {
     // 暂存，等待保存后上传
-    pendingImages.value.push({ file, tempUrl })
+    pendingImages.value.push({ file: processedFile, tempUrl })
     notify('Image will be uploaded after saving')
   }
 }
