@@ -63,7 +63,6 @@ const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 
         ctx?.drawImage(img, 0, 0, width, height)
         canvas.toBlob((blob) => {
           if (blob) {
-            // 保持原文件名，类型尽量用原类型，但 canvas 可能输出 image/jpeg，这里保持原类型
             const compressedFile = new File([blob], file.name, { type: file.type })
             resolve(compressedFile)
           } else {
@@ -77,7 +76,7 @@ const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 
   })
 }
 
-// 自定义 Iframe 扩展（原有）
+// 自定义 Iframe 扩展
 const Iframe = Node.create({
   name: 'iframe',
   group: 'block',
