@@ -34,10 +34,8 @@ const expandedPageIds = ref<Set<number>>(new Set())
 // 修复后的 isActive 函数
 const isActive = (item: { slug: string; type: 'page' | 'category' }) => {
   if (item.type === 'page') {
-    // 检查是否匹配页面路由
     return route.name === 'page' && route.params.slug === item.slug
   } else {
-    // 检查是否匹配分类路由
     return route.name === 'category' && route.params.slug === item.slug
   }
 }
@@ -48,19 +46,15 @@ const fetchSidebarData = async () => {
   try {
     const response = await request.get('/api/sidebar')
     sidebarData.value = response
-
-    // 自动展开当前页面的父级页面
     autoExpandCurrentPage()
   } catch (error) {
     console.error('Failed to fetch sidebar data:', error)
-    // 如果API调用失败，使用备用方案分别获取数据
     await fetchFallbackData()
   } finally {
     loading.value = false
   }
 }
 
-// 备用方案：分别获取数据
 const fetchFallbackData = async () => {
   try {
     const [pagesResponse, categoriesResponse, siteConfigResponse] = await Promise.all([
@@ -69,7 +63,6 @@ const fetchFallbackData = async () => {
       request.get('/api/sidebar/site-config').catch(() => null)
     ])
 
-    // 构建页面树
     const pageTree = buildPageTree(pagesResponse)
 
     sidebarData.value = {
@@ -102,11 +95,9 @@ const fetchFallbackData = async () => {
 const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
   if (!flatPages || flatPages.length === 0) return []
 
-  // 创建id到页面的映射
   const pageMap = new Map<number, any>()
   const rootPages: any[] = []
 
-  // 第一次遍历：创建所有页面的副本并添加到映射
   flatPages.forEach(page => {
     const node: PageTreeNodeDto = {
       id: page.id,
@@ -122,7 +113,6 @@ const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
     pageMap.set(page.id, node)
   })
 
-  // 第二次遍历：构建树形结构
   flatPages.forEach(page => {
     const node = pageMap.get(page.id)
     if (page.parentId && page.parentId !== null) {
@@ -139,12 +129,10 @@ const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
     }
   })
 
-  // 按orderIndex排序
   const sortPages = (pages: any[]) => {
     return pages.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
   }
 
-  // 递归排序所有子页面
   const sortTree = (pageList: any[]) => {
     pageList.forEach(page => {
       if (page.children && page.children.length > 0) {
@@ -160,13 +148,11 @@ const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
 
 // 自动展开当前页面的父级页面
 const autoExpandCurrentPage = () => {
-  // 如果当前路由不是页面路由，则不处理
   if (route.name !== 'page') return
 
   const currentSlug = route.params.slug as string
   if (!currentSlug) return
 
-  // 查找当前页面及其所有父级页面
   const findPageAndParents = (pageList: PageTreeNodeDto[], targetSlug: string): number[] => {
     for (const page of pageList) {
       if (page.slug === targetSlug) {
@@ -183,7 +169,6 @@ const autoExpandCurrentPage = () => {
   }
 
   const pageIds = findPageAndParents(pages.value, currentSlug)
-  // 展开所有父级页面（不包括当前页面自身）
   pageIds.slice(0, -1).forEach(id => {
     expandedPageIds.value.add(id)
   })
@@ -223,7 +208,6 @@ const renderPageTree = (pageList: PageTreeNodeDto[], depth = 0) => {
   })
 }
 
-// 计算渲染后的页面树
 const renderedPages = computed(() => renderPageTree(pages.value))
 
 onMounted(() => {
@@ -234,7 +218,6 @@ onMounted(() => {
 
 // 监听路由变化，更新高亮状态
 watch(() => route.fullPath, () => {
-  // 重置展开状态
   expandedPageIds.value.clear()
   autoExpandCurrentPage()
 })
@@ -266,17 +249,17 @@ const handleLinkClick = () => {
     </div>
   </button>
 
-  <!-- 遮罩层 -->
+  <!-- 遮罩层 - 设置 z-40，低于侧边栏的 z-50 -->
   <div
     v-if="isMobile && isSidebarOpen"
     @click="toggleSidebar"
     class="fixed inset-0 bg-black/50 z-40"
   ></div>
 
-  <!-- 侧边栏主体 -->
+  <!-- 侧边栏主体 - z-50 确保在遮罩层之上 -->
   <aside
     :class="[
-      'sidebar transition-transform duration-300 ease-in-out z-40',
+      'sidebar transition-transform duration-300 ease-in-out z-50',
       {
         'fixed inset-y-0 left-0 w-64 translate-x-0 shadow-lg': isMobile,
         'translate-x-[-100%]': isMobile && !isSidebarOpen,
@@ -413,16 +396,17 @@ const handleLinkClick = () => {
           </li>
         </ul>
       </nav>
-    <!-- 分隔线 -->
-    <div class="border-t border-zinc-100 dark:border-zinc-900 my-6"></div>
 
-    <!-- 社交链接 -->
-    <div v-if="!loading" class="mb-6">
+      <!-- 分隔线 -->
+      <div class="border-t border-zinc-100 dark:border-zinc-900 my-6"></div>
+
+      <!-- 社交链接 -->
+      <div v-if="!loading" class="mb-6">
         <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-             Connect
-            </h3>
+          Connect
+        </h3>
         <SocialLinks display-mode="sidebar" orientation="vertical" />
-    </div>
+      </div>
 
       <!-- 分隔线 -->
       <div class="border-t border-zinc-100 dark:border-zinc-900 my-6"></div>
