@@ -13,7 +13,7 @@ It handles the entire stack for you:
 - **Backend** – Spring Boot (Java 21) with a pre‑configured MySQL database
 - **Frontend** – Vite + Vue (modern, fast, hot‑reload in development, production‑ready static files)
 - **Database** – Automatically creates a MySQL database (via Docker or your local installation) and imports sample data
-- **Apache integration** – Generates a production Apache virtual host configuration with dynamic port detection, reverse proxy, and SPA routing.
+- **Apache integration** – Generates a production Apache virtual host configuration with **dynamic port detection**, reverse proxy, and SPA routing. You can specify your own domain name during setup.
 - **Smart image handling** – Automatically compresses large images (>2MB) before upload to speed up page loads.
 - **Simple setup** – Run the configuration script as `root`, then start the services as the `www-data` user. Everything is configured and ready.
 
@@ -58,7 +58,8 @@ You just answer a few prompts and your blog is live.
     - Whether you have an existing MySQL database or want a new one
     - Your blog title and footer text
     - Whether to change the default user password (default username: `gosling`)
-    - (Automatically) It will detect an available port for the backend (starting from 8080) and generate an Apache virtual host file.
+    - **Your domain name** (e.g., `example.com`). If you don't have one yet, just press Enter to use the default `magiccodelab.com` – you can change it later by editing the Apache config or re-running the script.
+    - (Automatically) It will detect an available port for the backend (starting from 8080) and generate an Apache virtual host file with your domain.
 
 5. **After configuration completes**, start the services as the `www-data` user:
    ```bash
@@ -67,7 +68,7 @@ You just answer a few prompts and your blog is live.
 
 6. **That's it!**  
    Your blog will be running at:
-    - **Production mode (with Apache)**: http://your-server-ip (or your domain if configured)
+    - **Production mode (with Apache)**: http://your-domain (or http://your-server-ip if you haven't set up DNS)
     - **Backend API**: http://localhost:8080 (or the dynamically selected port)
 
    The backend runs in the background, with logs written to `backend.log`.
@@ -86,15 +87,15 @@ If you want to access your blog using a domain name (e.g., `http://magiccodelab.
 
 Add a line that maps your server's IP address to your desired domain, for example:
 ```
-YOUR_SERVER_IP   magiccodelab.com
+YOUR_SERVER_IP   example.com
 ```
 
 If you are testing on the same machine where the server runs (e.g., in a development environment), you can use `127.0.0.1` as the IP:
 ```
-127.0.0.1   magiccodelab.com
+127.0.0.1   example.com
 ```
 
-After saving the file, you can open your browser and visit `http://magiccodelab.com` – it will resolve to the IP you set.
+After saving the file, you can open your browser and visit `http://example.com` – it will resolve to the IP you set.
 
 > **Note**: This change only affects your local machine. To make your domain accessible to everyone on the internet, you must configure DNS records with your domain registrar or DNS provider.
 
@@ -133,13 +134,14 @@ This script handles the **one‑time setup**:
 6. **Ownership Adjustment**
     - Changes the project directory owner to `www-data:www-data` – a crucial step for production security.
 
-7. **Apache Virtual Host Generation**
+7. **Apache Virtual Host Generation** (with custom domain)
+    - **Prompts you for your domain name** (default: `magiccodelab.com`).
     - Detects an available port for the backend (starting from 8080).
-    - Generates a complete Apache configuration file at `/etc/apache2/sites-available/magiccodelab.conf` with:
+    - Generates a complete Apache configuration file at `/etc/apache2/sites-available/your-domain.conf` with:
         - DocumentRoot pointing to `front/dist`
         - SPA routing (Rewrite rules)
-        - Reverse proxy for `/api`, `/login`, and Swagger endpoints
-        - Correct `ProxyPass` using the detected dynamic port
+        - Reverse proxy for `/api`, `/login`, and Swagger endpoints using the detected dynamic port
+        - Correct `ServerName` and `ServerAdmin` based on your domain
     - Enables the site and reloads Apache.
 
 ### `start.sh` (run as `www-data`)
@@ -253,8 +255,10 @@ Also ensure that the project files are owned by `www-data` (the configuration sc
   sudo a2enmod proxy proxy_http rewrite
   sudo systemctl restart apache2
   ```
-- Verify the generated config file at `/etc/apache2/sites-available/magiccodelab.conf` and ensure the `ServerName` matches your domain.
-- If you change the backend port manually, update the Apache config accordingly.
+- Verify the generated config file at `/etc/apache2/sites-available/your-domain.conf` and ensure the `ServerName` matches your domain.
+- If you later change the backend port manually (e.g., because another service took the port), you can either:
+  - Re-run `sudo ./configure.sh` to regenerate the Apache config with a new port, or
+  - Update the `ProxyPass` lines in the config file manually and reload Apache.
 
 ### Images show as broken after saving
 This is usually because the temporary blob URLs were not replaced. In the browser console, check if the image uploads succeeded (look for network requests to `/api/posts/.../images`).  
@@ -268,7 +272,7 @@ If they failed, the images remain as blob URLs – you can re-upload them after 
 - **Frontend** – Vite + Vue 3, with a clean, Vim‑inspired design, and an editor with image/video embedding, LaTeX support, and auto‑compression of large images.
 - **Sample data** – A few blog posts and one user (`gosling` with password `123456` unless you changed it).
 - **Database** – Automatically configured with UTF‑8 support.
-- **Apache integration** – Ready‑to‑use production virtual host configuration.
+- **Apache integration** – Ready‑to‑use production virtual host configuration with custom domain support.
 
 ---
 
