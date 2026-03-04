@@ -7,7 +7,8 @@ import SocialLinks from '@/components/public/SocialLinks.vue'
 
 const route = useRoute()
 const isMobile = ref(false)
-const isSidebarOpen = ref(false)
+const isSidebarOpen = ref(false) // 控制移动端（遮罩层平移）
+const isPcCollapsed = ref(false) // 新增：控制 PC 端（宽度重排收缩）
 
 // 侧边栏数据
 const sidebarData = ref<SidebarDto | null>(null)
@@ -28,7 +29,7 @@ const siteConfig = computed(() => sidebarData.value?.siteConfig || {
   isActive: true
 })
 
-// 展开/收起的页面ID
+// 展开/收起的页面 ID
 const expandedPageIds = ref<Set<number>>(new Set())
 
 // 修复后的 isActive 函数
@@ -187,6 +188,10 @@ const togglePage = (pageId: number, hasChildren: boolean) => {
 // 响应式处理
 const checkMobile = () => {
   isMobile.value = window.innerWidth < 768
+  // 可选：切换到移动端时自动展开 PC 折叠的侧边栏，避免状态混乱
+  if (isMobile.value) {
+    isPcCollapsed.value = false
+  }
 }
 
 // 渲染页面树
@@ -249,6 +254,19 @@ const handleLinkClick = () => {
     </div>
   </button>
 
+  <!-- PC 端悬浮小按钮 (左下角) -->
+  <button
+    v-if="!isMobile"
+    @click="isPcCollapsed = !isPcCollapsed"
+    class="fixed bottom-6 left-6 z-[60] p-2 flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full shadow-sm hover:shadow group transition-all duration-300"
+    title="切换侧边栏"
+  >
+    <div
+      class="w-5 h-5 text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-transform duration-300"
+      :class="isPcCollapsed ? 'i-carbon-chevron-right' : 'i-carbon-chevron-left'"
+    ></div>
+  </button>
+
   <!-- 遮罩层 - 设置 z-40，低于侧边栏的 z-50 -->
   <div
     v-if="isMobile && isSidebarOpen"
@@ -256,19 +274,24 @@ const handleLinkClick = () => {
     class="fixed inset-0 bg-black/50 z-40"
   ></div>
 
-  <!-- 侧边栏主体 - z-50 确保在遮罩层之上 -->
+  <!-- 侧边栏主体 -->
   <aside
     :class="[
-      'sidebar transition-transform duration-300 ease-in-out z-50',
-      {
-        'fixed inset-y-0 left-0 w-64 translate-x-0 shadow-lg': isMobile,
-        'translate-x-[-100%]': isMobile && !isSidebarOpen,
-        'hidden md:block md:w-64 md:sticky md:top-0 md:h-screen': !isMobile
-      }
+      'sidebar transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) z-50 flex-shrink-0',
+      // 移动端: 默认 w-64，采用 translate 平移控制悬浮层
+      'fixed inset-y-0 left-0 w-64 shadow-lg',
+      isSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+      // PC 端: 取消平移，采用 sticky 占位，通过控制宽度实现页面重排
+      'md:sticky md:top-0 md:h-screen md:shadow-none md:translate-x-0',
+      // PC 端收缩状态控制
+      isPcCollapsed
+        ? 'md:w-0 md:opacity-0 md:border-none'
+        : 'md:w-64 md:opacity-100 md:border-r'
     ]"
-    class="bg-white dark:bg-zinc-950 border-r border-zinc-100 dark:border-zinc-900"
+    class="bg-white dark:bg-zinc-950 border-zinc-100 dark:border-zinc-900 overflow-hidden"
   >
-    <div class="h-full overflow-y-auto p-6">
+    <!-- 内部容器：应用 sidebar-scroll-container 类以优化滚动条 -->
+    <div class="sidebar-scroll-container h-full overflow-y-auto p-6 pb-20">
       <!-- 用户信息区 -->
       <div class="mb-8">
         <router-link
@@ -421,6 +444,39 @@ const handleLinkClick = () => {
 </template>
 
 <style scoped>
+/* 侧边栏容器：隐藏滚动条但保留滚动功能 */
+.sidebar-scroll-container {
+  /* Firefox */
+  scrollbar-width: none;
+  /* IE/Edge */
+  -ms-overflow-style: none;
+  /* 平滑滚动体验 */
+  scroll-behavior: smooth;
+  /* 避免内容在宽度变化时折行 */
+  white-space: nowrap;
+}
+
+/* Chrome, Safari, Edge (Blink 引擎) */
+.sidebar-scroll-container::-webkit-scrollbar {
+  width: 4px; /* 极细的滚动条 */
+  display: none; /* 默认完全隐藏 */
+}
+
+/* 仅在鼠标悬浮在侧边栏时才显示滚动条轨道，增强交互感 */
+.sidebar-scroll-container:hover::-webkit-scrollbar {
+  display: block;
+}
+
+.sidebar-scroll-container::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.3); /* 淡灰色半透明 */
+  border-radius: 10px;
+}
+
+.sidebar-scroll-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.5);
+}
+
+/* --- 原有的动画类保持不变 --- */
 .slide-enter-active,
 .slide-leave-active {
   transition: all 0.3s ease;
@@ -440,23 +496,5 @@ const handleLinkClick = () => {
   max-height: 500px;
   opacity: 1;
   transform: translateY(0);
-}
-
-/* 侧边栏滚动条样式 */
-.sidebar::-webkit-scrollbar {
-  width: 4px;
-}
-
-.sidebar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 2px;
-}
-
-.sidebar::-webkit-scrollbar-thumb:hover {
-  background: #555;
 }
 </style>
