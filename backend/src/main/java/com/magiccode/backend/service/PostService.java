@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 
 @Service
@@ -66,6 +67,11 @@ public class PostService {
         if (postDetailDto.getTitle() == null || postDetailDto.getTitle().isBlank()) {
             throw new RuntimeException("Title is Required");
         }
+
+        if (postRepository.findBySlug(postDetailDto.getSlug()) != null) {
+            throw new RuntimeException("Slug already exists, please use another slug.");
+        }
+
         Post post = postDetailMapper.toPostEntity(postDetailDto);
         post.setCategory(category);
         postRepository.save(post);
@@ -81,9 +87,7 @@ public class PostService {
     public PostDetailDto updatePost(Long id, PostDetailDto updatePostDetailDto, String categorySlug) {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Post Not Found"));
-        if (post == null) {
-            throw new RuntimeException("Post Not Found.");
-        }
+
         if (categorySlug != null && !categorySlug.isBlank()) {
             Category category = categoryRepository.findBySlug(categorySlug);
             if (category == null) {
@@ -94,9 +98,15 @@ public class PostService {
         if (updatePostDetailDto.getTitle() != null) {
             post.setTitle(updatePostDetailDto.getTitle());
         }
-        if (updatePostDetailDto.getSlug() != null) {
+
+        if (updatePostDetailDto.getSlug() != null && !updatePostDetailDto.getSlug().equals(post.getSlug())) {
+            Post existing = postRepository.findBySlug(updatePostDetailDto.getSlug());
+            if (existing != null && !existing.getId().equals(id)) {
+                throw new RuntimeException("Slug already exists, please use another slug.");
+            }
             post.setSlug(updatePostDetailDto.getSlug());
         }
+
         if (updatePostDetailDto.getContent() != null) {
             post.setContent(updatePostDetailDto.getContent());
         }
@@ -131,4 +141,15 @@ public class PostService {
                 .toList();
     }
 
+    public List<PostSummaryDto> searchPosts(String keyword, int limit) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Post> posts = postRepository.searchByKeyword(keyword.trim(), PageRequest.of(0, limit));
+
+        return posts.stream()
+                .map(postSummaryMapper::toPostSummaryDto)
+                .toList();
+    }
 }

@@ -66,7 +66,7 @@ public class PostController {
     }
 
     @GetMapping("/recent")
-    public ResponseEntity<List<PostSummaryDto>> getRecentPosts(@RequestParam(defaultValue = "5") int limit) {
+    public ResponseEntity<List<PostSummaryDto>> getRecentPosts(@RequestParam(defaultValue = "6") int limit) {
         List<PostSummaryDto> dto = postService.getRecentPosts(limit);
         return ResponseEntity.ok(dto);
     }
@@ -96,4 +96,11 @@ public class PostController {
         }
     }
 
+    @GetMapping("/searchPages")
+    public ResponseEntity<List<PostSummaryDto>> searchPosts(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "10") int limit) {
+        List<PostSummaryDto> results = postService.searchPosts(q, limit);
+        return ResponseEntity.ok(results);
+    }
 }

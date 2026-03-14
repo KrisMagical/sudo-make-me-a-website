@@ -20,4 +20,6 @@ public class PageDto {
     private Integer orderIndex;
     private List<ImageDto> images;
     private List<VideoDto> videos;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

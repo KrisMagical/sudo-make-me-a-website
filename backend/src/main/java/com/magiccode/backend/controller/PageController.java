@@ -2,6 +2,7 @@ package com.magiccode.backend.controller;
 
 import com.magiccode.backend.dto.MovePageRequest;
 import com.magiccode.backend.dto.PageDto;
+import com.magiccode.backend.dto.PageSummaryDto;
 import com.magiccode.backend.service.PageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -65,5 +66,15 @@ public class PageController {
     @PatchMapping("/{slug}/move")
     public ResponseEntity<PageDto> move(@PathVariable String slug, @RequestBody MovePageRequest request) {
         return ResponseEntity.ok(pageService.moveBySlug(slug, request));
+    }
+
+    @GetMapping("/searchPages")
+    public ResponseEntity<List<PageSummaryDto>> search(@RequestParam("q") String query) {
+        return ResponseEntity.ok(pageService.searchPages(query));
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<List<PageSummaryDto>> getRecent(@RequestParam(defaultValue = "6") int limit) {
+        return ResponseEntity.ok(pageService.getRecentPages(limit));
     }
 }

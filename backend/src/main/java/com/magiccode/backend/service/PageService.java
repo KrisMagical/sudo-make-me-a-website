@@ -2,6 +2,7 @@ package com.magiccode.backend.service;
 
 import com.magiccode.backend.dto.MovePageRequest;
 import com.magiccode.backend.dto.PageDto;
+import com.magiccode.backend.dto.PageSummaryDto;
 import com.magiccode.backend.mapping.PageMapper;
 import com.magiccode.backend.mapping.VideoMapper;
 import com.magiccode.backend.model.EmbeddedImage;
@@ -11,6 +12,7 @@ import com.magiccode.backend.model.PageLink;
 import com.magiccode.backend.repository.PageLinkRepository;
 import com.magiccode.backend.repository.PageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,7 +68,9 @@ public class PageService {
             page.setParent(parent);
         }
 
-        if (dto.getOrderIndex() != null) {
+        if (dto.getOrderIndex() == null) {
+            page.setOrderIndex(getNextOrderIndex(dto.getParentId()));
+        } else {
             page.setOrderIndex(dto.getOrderIndex());
         }
 
@@ -96,7 +100,8 @@ public class PageService {
         if (dto.getContent() != null) page.setContent(dto.getContent());
 
         if (dto.getParentId() != null) {
-            if (!Objects.equals(page.getParent() != null ? page.getParent().getId() : null, dto.getParentId())) {
+            Long currentParentId = page.getParent() != null ? page.getParent().getId() : null;
+            if (!Objects.equals(currentParentId, dto.getParentId())) {
                 Page parent = pageRepository.findById(dto.getParentId())
                         .orElseThrow(() -> new RuntimeException("Parent Page Not Found"));
                 if (isDescendant(page, parent)) {
@@ -104,8 +109,6 @@ public class PageService {
                 }
                 page.setParent(parent);
             }
-        } else {
-            page.setParent(null);
         }
 
         if (dto.getOrderIndex() != null) {
@@ -126,6 +129,16 @@ public class PageService {
         if (page == null) {
             throw new RuntimeException("Page Not Found.");
         }
+
+        List<Page> children = pageRepository.findByParentId(page.getId());
+        if (!children.isEmpty()) {
+            Page newParent = page.getParent();
+            for (Page child : children) {
+                child.setParent(newParent);
+            }
+            pageRepository.saveAll(children);
+        }
+
         pageLinkRepository.deleteByFromPage(page);
         pageLinkRepository.deleteByToPage(page);
         imageService.deleteAll(EmbeddedImage.OwnerType.PAGE, page.getId());
@@ -153,7 +166,9 @@ public class PageService {
             page.setParent(parent);
         }
 
-        if (request.getOrderIndex() != null) {
+        if (request.getOrderIndex() == null) {
+            page.setOrderIndex(getNextOrderIndex(request.getParentId()));
+        } else {
             page.setOrderIndex(request.getOrderIndex());
         }
 
@@ -247,7 +262,28 @@ public class PageService {
         }
     }
 
-    // ==================== 工具方法 ====================
+    public List<PageSummaryDto> searchPages(String query) {
+        return pageRepository.searchByKeyword(query).stream()
+                .map(page -> {
+                    PageSummaryDto summary = pageMapper.toSummaryDto(page);
+                    // 在此处设置子页面状态，逻辑清晰且易于调试
+                    summary.setHasChildren(pageRepository.existsByParent_Id(page.getId()));
+                    return summary;
+                }).toList();
+    }
+
+    public List<PageSummaryDto> getRecentPages(int limit) {
+        return pageRepository.findByOrderByCreatedAtDesc(PageRequest.of(0, limit))
+                .stream()
+                .map(page -> {
+                    PageSummaryDto summary = pageMapper.toSummaryDto(page);
+                    summary.setHasChildren(pageRepository.existsByParent_Id(page.getId()));
+                    return summary;
+                })
+                .toList();
+    }
+
+    // ==================== tools methods ====================
     private boolean isValidSlug(String slug) {
         return slug != null && !slug.isBlank();
     }
@@ -265,8 +301,7 @@ public class PageService {
     }
 
     private void syncLinks(Page fromPage) {
-        String content = fromPage.getContent();
-        if (content == null) content = "";
+        String content = fromPage.getContent() == null ? "" : fromPage.getContent();
 
         Set<String> slugs = new HashSet<>();
         slugs.addAll(extractSlugs(WIKI_LINK, content));
@@ -299,10 +334,7 @@ public class PageService {
         Matcher matcher = pattern.matcher(content);
         while (matcher.find()) {
             String slug = matcher.group(1);
-            if (slug != null) {
-                slug = slug.trim();
-                if (!slug.isBlank()) out.add(slug);
-            }
+            if (slug != null && !slug.isBlank()) out.add(slug.trim());
         }
         return out;
     }
@@ -322,9 +354,22 @@ public class PageService {
         }
     }
 
+    private int getNextOrderIndex(Long parentId) {
+        List<Page> siblings;
+        if (parentId == null) {
+            siblings = pageRepository.findByParentIdIsNull();
+        } else {
+            siblings = pageRepository.findByParentId(parentId);
+        }
+        return siblings.stream()
+                .mapToInt(Page::getOrderIndex)
+                .max()
+                .orElse(0) + 1;
+    }
+
     private PageDto buildReturnDto(Page page) {
         PageDto result = pageMapper.toDto(page);
-        result.setImages(imageService.listPageImages(page.getSlug()));
+        result.setImages(imageService.listImages(EmbeddedImage.OwnerType.PAGE, page.getId()));
         result.setVideos(videoMapper.toDtoList(videoService.list(EmbeddedVideo.OwnerType.PAGE, page.getId())));
         return result;
     }

@@ -120,29 +120,33 @@ public class ImageService {
     }
 
     // ---------- List ----------
+    /**
+     * 通用方法：根据所有者类型和ID列出图片
+     */
+    @Transactional(readOnly = true)
+    public List<ImageDto> listImages(EmbeddedImage.OwnerType ownerType, Long ownerId) {
+        return imageMapper.toDtoList(
+                embeddedImageRepository.findAllByOwnerTypeAndOwnerIdOrderByCreatedAtAsc(ownerType, ownerId)
+        );
+    }
+
     @Transactional(readOnly = true)
     public List<ImageDto> listPostImages(Long postId) {
         if (!postRepository.existsById(postId)) throw new RuntimeException("Post Not Found");
-        return imageMapper.toDtoList(
-                embeddedImageRepository.findAllByOwnerTypeAndOwnerIdOrderByCreatedAtAsc(EmbeddedImage.OwnerType.POST, postId)
-        );
+        return listImages(EmbeddedImage.OwnerType.POST, postId);
     }
 
     @Transactional(readOnly = true)
     public List<ImageDto> listPageImages(String pageSlug) {
         Page page = pageRepository.findBySlug(pageSlug);
         if (page == null) throw new RuntimeException("Page Not Found");
-        return imageMapper.toDtoList(
-                embeddedImageRepository.findAllByOwnerTypeAndOwnerIdOrderByCreatedAtAsc(EmbeddedImage.OwnerType.PAGE, page.getId())
-        );
+        return listImages(EmbeddedImage.OwnerType.PAGE, page.getId());
     }
 
     @Transactional(readOnly = true)
     public List<ImageDto> listHomeImages() {
         HomeProfile home = ensureHomeExists();
-        return imageMapper.toDtoList(
-                embeddedImageRepository.findAllByOwnerTypeAndOwnerIdOrderByCreatedAtAsc(EmbeddedImage.OwnerType.HOME, home.getId())
-        );
+        return listImages(EmbeddedImage.OwnerType.HOME, home.getId());
     }
 
     // ---------- Get Binary ----------
@@ -199,8 +203,8 @@ public class ImageService {
         return siteConfigRepository.findByIsActiveTrue()
                 .orElseGet(() -> siteConfigRepository.save(
                         SiteConfig.builder()
-                                .siteName("我的博客")
-                                .authorName("作者")
+                                .siteName("My Blog")
+                                .authorName("Author")
                                 .isActive(true)
                                 .build()
                 ));

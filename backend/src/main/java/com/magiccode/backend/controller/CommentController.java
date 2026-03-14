@@ -3,6 +3,8 @@ package com.magiccode.backend.controller;
 import com.magiccode.backend.dto.CommentDto;
 import com.magiccode.backend.dto.CreateCommentRequest;
 import com.magiccode.backend.service.CommentService;
+import com.magiccode.backend.service.RateLimitService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,8 @@ import java.util.List;
 @RequestMapping("/api/comments")
 public class CommentController {
     private CommentService commentService;
+    private final RateLimitService rateLimitService;
+    private final HttpServletRequest httpServletRequest;
 
     @GetMapping("/post/{postId}")
     public ResponseEntity<List<CommentDto>> getComments(@PathVariable Long postId) {
@@ -27,6 +31,11 @@ public class CommentController {
 
     @PostMapping("/post/{postId}")
     public ResponseEntity<CommentDto> addComment(@PathVariable Long postId, @RequestBody CreateCommentRequest request) {
+        String ip = httpServletRequest.getRemoteUser();
+        if (!rateLimitService.tryAcquire(ip)) {
+            throw new RuntimeException("Too many comments, please try again later.");
+        }
+
         CommentDto commentDto = commentService.addComment(postId, request);
         if (commentDto == null) {
             throw new RuntimeException("Add Comment Failed");
