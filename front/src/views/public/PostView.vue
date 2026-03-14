@@ -33,12 +33,20 @@ onMounted(loadData);
 
 <template>
   <article v-if="post" class="max-w-2xl mx-auto py-12 px-4">
-    <header class="mb-8 border-b border-zinc-100 pb-8">
-      <h1 class="text-3xl font-bold tracking-tighter mb-2">{{ post.title }}</h1>
-      <div class="flex gap-4 text-xs text-zinc-400 font-mono">
-        <span>{{ new Date(post.createdAt).toLocaleDateString() }}</span>
-        <span class="uppercase">/ {{ post.categoryName }}</span>
+    <header class="mb-8 border-b border-zinc-100 dark:border-zinc-800 pb-8">
+      <h1 class="text-3xl font-bold tracking-tighter mb-4">{{ post.title }}</h1>
+
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-mono uppercase tracking-tighter text-zinc-500 dark:text-zinc-400">
+        <span class="text-zinc-800 dark:text-zinc-200 font-bold">POST / {{ post.categoryName }}</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
         <span>VIEWS: {{ post.viewCount }}</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
+        <span>CREATED: {{ new Date(post.createdAt).toLocaleDateString() }}</span>
+
+        <template v-if="post.updatedAt && post.updatedAt !== post.createdAt">
+          <span class="text-zinc-300 dark:text-zinc-700">|</span>
+          <span class="text-zinc-400 dark:text-zinc-500">UPDATED: {{ new Date(post.updatedAt).toLocaleDateString() }}</span>
+        </template>
       </div>
     </header>
 

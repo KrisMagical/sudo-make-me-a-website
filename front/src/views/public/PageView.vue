@@ -46,8 +46,16 @@ watch(
   <div v-else-if="page" class="max-w-2xl mx-auto py-12 px-4">
     <header class="mb-8 border-b border-zinc-100 dark:border-zinc-800 pb-8">
       <h1 class="text-3xl font-bold tracking-tighter mb-4">{{ page.title }}</h1>
-      <div class="text-xs text-zinc-500 font-mono uppercase tracking-tighter">
-        PAGE / {{ page.slug }}
+
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-mono uppercase tracking-tighter text-zinc-500 dark:text-zinc-400">
+        <span class="text-zinc-800 dark:text-zinc-200 font-bold">PAGE / {{ page.slug }}</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
+        <span>CREATED: {{ new Date(page.createdAt).toLocaleDateString() }}</span>
+
+        <template v-if="page.updatedAt && page.updatedAt !== page.createdAt">
+          <span class="text-zinc-300 dark:text-zinc-700">|</span>
+          <span class="text-zinc-400 dark:text-zinc-500">UPDATED: {{ new Date(page.updatedAt).toLocaleDateString() }}</span>
+        </template>
       </div>
     </header>
 

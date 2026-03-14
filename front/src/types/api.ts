@@ -84,6 +84,18 @@ export interface PageDto {
   orderIndex: number;
   images: ImageDto[];
   videos: VideoDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PageSummaryDto {
+  id: number;
+  slug: string;
+  title: string;
+  parentId: number | null;
+  hasChildren: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HomeProfileDto {

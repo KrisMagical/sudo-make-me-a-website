@@ -111,7 +111,7 @@ const save = async () => {
     let savedPage: PageDto
     if (isEditing.value) {
       await pagesApi.update(page.value.slug, page.value)
-      savedPage = page.value // 同上，假设 update 返回更新后的对象
+      savedPage = page.value
       notify('Page updated & structure synced', 'success')
     } else {
       savedPage = await pagesApi.create(page.value)
@@ -134,7 +134,19 @@ const save = async () => {
       notify('Session expired. Please login again.', 'error')
       router.push('/admin/login')
     } else {
-      notify(isEditing.value ? 'Failed to update page' : 'Failed to create page', 'error')
+      // 默认错误消息
+      let message = isEditing.value ? 'Failed to update page' : 'Failed to create page'
+
+      // 尝试提取后端返回的具体错误信息
+      if (error.response?.data?.error) {
+        message = error.response.data.error
+      } else if (error.response?.data?.message) {
+        message = error.response.data.message
+      } else if (error.message) {
+        message = error.message
+      }
+
+      notify(message, 'error')
     }
   } finally {
     saving.value = false
@@ -225,9 +237,9 @@ onMounted(fetchData)
         />
 
         <!-- 只在编辑现有页面且页面有有效ID时才显示MediaLibrary -->
-        <MediaLibrary 
-          v-if="isEditing && page.id && page.id > 0" 
-          owner-type="PAGE" 
+        <MediaLibrary
+          v-if="isEditing && page.id && page.id > 0"
+          owner-type="PAGE"
           :owner-id="page.id"
           :owner-slug="page.slug"
         />

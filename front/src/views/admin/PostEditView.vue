@@ -76,15 +76,14 @@ const save = async () => {
     let savedPost: PostDetailDto
     if (isEditing.value) {
       await postsApi.update(post.value.id, categorySlug, post.value)
-      savedPost = post.value // 更新操作返回的是 void? 根据 api.ts 是 request.put，应该返回更新后的 PostDetailDto，假设它返回了
-      // 为了保险，重新获取一下最新数据（但更新操作通常返回更新后的对象）
+      savedPost = post.value
       notify('Post updated successfully', 'success')
     } else {
       savedPost = await postsApi.create(categorySlug, post.value)
       notify('Post created successfully', 'success')
       // 跳转到编辑页
       await router.push({ name: 'admin-post-edit', params: { slug: savedPost.slug } })
-      // 重新获取 post 数据以更新 ID（因为 create 返回的应该包含 id）
+      // 重新获取 post 数据以更新 ID
       post.value = savedPost
     }
 
@@ -92,8 +91,20 @@ const save = async () => {
     if (editorRef.value && post.value && post.value.id) {
       await editorRef.value.processPendingUploads(post.value.id)
     }
-  } catch (error) {
-    notify(isEditing.value ? 'Failed to update post' : 'Failed to create post', 'error')
+  } catch (error: any) {
+    // 默认错误消息
+    let message = isEditing.value ? 'Failed to update post' : 'Failed to create post'
+
+    // 尝试提取后端返回的具体错误信息
+    if (error.response?.data?.error) {
+      message = error.response.data.error
+    } else if (error.response?.data?.message) {
+      message = error.response.data.message
+    } else if (error.message) {
+      message = error.message
+    }
+
+    notify(message, 'error')
   } finally {
     saving.value = false
   }

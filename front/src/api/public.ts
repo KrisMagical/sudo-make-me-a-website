@@ -1,8 +1,8 @@
 import request from '@/utils/request';
 import type {
-  PostDetailDto, PostSummaryDto, PageDto,
-  HomeProfileDto, CategoryDto, CommentDto,
-  CreateCommentRequest, LikeResponseDto
+ PostDetailDto, PostSummaryDto, PageDto, PageSummaryDto,
+   HomeProfileDto, CategoryDto, CommentDto,
+   CreateCommentRequest, LikeResponseDto
 } from '@/types/api';
 
 export const publicApi = {
@@ -11,8 +11,11 @@ export const publicApi = {
   getPost: (slug: string) => request.get<PostDetailDto>(`/api/posts/${slug}`),
   getPage: (slug: string) => request.get<PageDto>(`/api/pages/${slug}`),
   getCategories: () => request.get<CategoryDto[]>('/api/categories'),
-  getRecentPosts: (limit = 5) => request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
+  getRecentPosts: (limit = 6) => request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
+  getRecentPages: (limit = 6) => request.get<PageSummaryDto[]>('/api/pages/recent', { params: { limit } }),
   getPostsByCategory: (slug: string) => request.get<PostSummaryDto[]>(`/api/posts/category/${slug}`),
+  searchPosts: (q: string) => request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q } }),
+  searchPages: (q: string) => request.get<PageSummaryDto[]>('/api/pages/searchPages', { params: { q } }),
 
   // 交互功能
   likePost: (postId: number, positive: boolean) =>

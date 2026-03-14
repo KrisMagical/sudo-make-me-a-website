@@ -110,16 +110,27 @@ const handleCreate = async () => {
     fetchSocials()
   } catch (error: any) {
     console.error('Create social link error:', error)
-    if (error.response?.status === 401) {
-      notify('Authentication failed. Please login again.', 'error')
+
+    let message = 'Failed to create social link'
+    const status = error.response?.status
+    const data = error.response?.data
+
+    if (status === 401) {
+      message = 'Authentication failed. Please login again.'
       router.push('/admin/login')
-    } else if (error.response?.status === 400) {
-      notify(error.response.data?.message || 'Invalid request', 'error')
-    } else if (error.response?.status === 409) {
-      notify('Social link with this name already exists', 'error')
-    } else {
-      notify('Failed to create social link', 'error')
+    } else if (status === 400 || status === 409) {
+      if (data?.error) {
+        message = data.error
+      } else if (data?.message) {
+        message = data.message
+      } else if (status === 409) {
+        message = 'Social link with this name already exists'
+      } else {
+        message = 'Invalid request'
+      }
     }
+
+    notify(message, 'error')
   }
 }
 
