@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { publicApi } from '@/api/public'
 import type { PostSummaryDto, CategoryDto } from '@/types/api'
@@ -25,6 +25,15 @@ const fetchData = async () => {
 }
 
 onMounted(fetchData)
+
+watch(
+  () => route.params.slug,
+  (newSlug, oldSlug) => {
+    if (newSlug !== oldSlug) {
+      fetchData()
+    }
+  }
+)
 </script>
 
 <template>
