@@ -1,110 +1,57 @@
-[file name]: MediaLibrary.vue
-[file content begin]
+<!-- src/components/public/RecentCard.vue -->
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import request from '@/utils/request'
-import type { ImageDto } from '@/types/api'
+import type { PostSummaryDto, PageSummaryDto } from '@/types/api'
 
-interface Props {
-  ownerType: 'POST' | 'PAGE' | 'HOME'
-  ownerId?: string | number
-  ownerSlug?: string
-}
+type RecentItem = (PostSummaryDto | PageSummaryDto) & { type: 'post' | 'page' }
 
-const props = withDefaults(defineProps<Props>(), {
-  ownerId: 0,
-  ownerSlug: ''
-})
-
-const images = ref<ImageDto[]>([])
-
-const fetchImages = async () => {
-  try {
-    let url = ''
-    
-    if (props.ownerType === 'POST') {
-      url = `/api/posts/${props.ownerId}/images`
-    } else if (props.ownerType === 'PAGE') {
-      if (props.ownerSlug && props.ownerSlug.length > 0) {
-        url = `/api/pages/${props.ownerSlug}/images`
-      } else if (props.ownerId && props.ownerId !== 0) {
-        console.warn('PAGE media library should use slug instead of id')
-        url = `/api/pages/${props.ownerId}/images`
-      } else {
-        console.error('PAGE media library requires either ownerSlug or ownerId')
-        return
-      }
-    } else {
-      url = `/api/home/images`
-    }
-
-    console.log('Fetching images from:', url)
-    images.value = await request.get(url)
-  } catch (error: any) {
-    console.error('Failed to fetch images:', error)
-    
-    if (error.response?.status === 401) {
-      console.warn('Authentication error when fetching images')
-    }
-  }
-}
-
-const deleteImage = async (imageId: number) => {
-  if (!confirm('Delete this image?')) return
-  
-  try {
-    // 删除图片的 API 使用 ID 而不是 slug
-    await request.delete(`/api/images/${props.ownerType}/${props.ownerId}/${imageId}`)
-    fetchImages()
-  } catch (error: any) {
-    console.error('Failed to delete image:', error)
-    alert('Failed to delete image. Please try again.')
-  }
-}
-
-watch(() => props.ownerSlug, (newSlug, oldSlug) => {
-  if (newSlug !== oldSlug && props.ownerType === 'PAGE') {
-    fetchImages()
-  }
-})
-
-onMounted(fetchImages)
+defineProps<{ item: RecentItem }>()
 </script>
 
 <template>
-  <div class="mt-8">
-    <h3 class="text-sm font-bold border-b border-zinc-800 mb-4 tracking-tighter">ATTACHED_MEDIA</h3>
-    
-    <div v-if="images.length === 0" class="text-sm text-zinc-400 italic">
-      No images attached to this {{ ownerType.toLowerCase() }}.
-    </div>
-    
-    <div v-else class="grid grid-cols-4 md:grid-cols-6 gap-4">
-      <div 
-        v-for="img in images" 
-        :key="img.id" 
-        class="group relative aspect-square border border-zinc-200 dark:border-zinc-800 p-1"
-      >
-        <img 
-          :src="img.url" 
-          :alt="img.originalFilename" 
-          class="w-full h-full object-cover"
-          loading="lazy"
-        />
-        <div 
-          class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-        >
-          <button 
-            @click="deleteImage(img.id)" 
-            class="text-white text-xs hover:underline px-2 py-1 bg-red-600/70 hover:bg-red-700/70"
-          >
-            REMOVE
-          </button>
-        </div>
-        <div class="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] p-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">
-          {{ img.originalFilename }}
-        </div>
+  <article class="group border border-zinc-100 dark:border-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors p-6">
+    <div class="flex items-start justify-between mb-3">
+      <div class="text-xs font-mono text-zinc-500 uppercase tracking-tighter">
+        {{ item.type === 'post' ? item.categoryName || 'Post' : 'Page' }}
+      </div>
+      <div class="text-xs text-zinc-400 font-mono">
+        {{ new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
       </div>
     </div>
-  </div>
+
+    <router-link :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`">
+      <h3 class="text-xl font-bold mb-3 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">
+        {{ item.title }}
+      </h3>
+    </router-link>
+
+    <!-- 仅文章显示摘要 -->
+    <p v-if="item.type === 'post' && (item as PostSummaryDto).excerpt"
+       class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
+       v-html="(item as PostSummaryDto).excerpt"
+    />
+
+    <div class="flex items-center justify-between text-xs text-zinc-500">
+      <!-- 文章显示点赞/点踩，页面显示简单标识 -->
+      <div v-if="item.type === 'post'" class="flex items-center space-x-4">
+        <span class="flex items-center gap-1 text-green-600 dark:text-green-400">
+          <div i-carbon-thumbs-up class="w-3 h-3" /> {{ (item as PostSummaryDto).likeCount }}
+        </span>
+        <span class="flex items-center gap-1 text-red-600 dark:text-red-400">
+          <div i-carbon-thumbs-down class="w-3 h-3" /> {{ (item as PostSummaryDto).dislikeCount }}
+        </span>
+        <span>Views: {{ (item as PostSummaryDto).viewCount }}</span>
+      </div>
+      <div v-else class="text-zinc-400">
+        <!-- 页面无统计数据，留空或放一个图标 -->
+        <div i-carbon-document class="w-4 h-4" />
+      </div>
+
+      <router-link
+        :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`"
+        class="font-bold uppercase tracking-tighter hover:underline"
+      >
+        {{ item.type === 'post' ? '阅读 →' : '查看 →' }}
+      </router-link>
+    </div>
+  </article>
 </template>
