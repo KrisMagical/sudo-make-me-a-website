@@ -1,5 +1,3 @@
-[file name]: MediaLibrary.vue
-[file content begin]
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import request from '@/utils/request'
