@@ -283,7 +283,7 @@ public class PageService {
                 .toList();
     }
 
-    // ==================== tools methods ====================
+    // ==================== 工具方法 ====================
     private boolean isValidSlug(String slug) {
         return slug != null && !slug.isBlank();
     }

@@ -31,7 +31,7 @@ public class CommentController {
 
     @PostMapping("/post/{postId}")
     public ResponseEntity<CommentDto> addComment(@PathVariable Long postId, @RequestBody CreateCommentRequest request) {
-        String ip = httpServletRequest.getRemoteUser();
+        String ip = httpServletRequest.getRemoteAddr();
         if (!rateLimitService.tryAcquire(ip)) {
             throw new RuntimeException("Too many comments, please try again later.");
         }

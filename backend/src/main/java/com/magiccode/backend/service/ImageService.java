@@ -121,7 +121,7 @@ public class ImageService {
 
     // ---------- List ----------
     /**
-     * 通用方法：根据所有者类型和ID列出图片
+     * 通用方法：根据所有者类型和ID列出图片（推荐使用）
      */
     @Transactional(readOnly = true)
     public List<ImageDto> listImages(EmbeddedImage.OwnerType ownerType, Long ownerId) {
@@ -203,8 +203,8 @@ public class ImageService {
         return siteConfigRepository.findByIsActiveTrue()
                 .orElseGet(() -> siteConfigRepository.save(
                         SiteConfig.builder()
-                                .siteName("My Blog")
-                                .authorName("Author")
+                                .siteName("我的博客")
+                                .authorName("作者")
                                 .isActive(true)
                                 .build()
                 ));
