@@ -1,113 +1,145 @@
+<!-- src/components/public/SearchModal.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { publicApi } from '@/api/public'
-import type { CreateCommentRequest } from '@/types/api'
+import type { PostSummaryDto, PageSummaryDto } from '@/types/api'
 
-const props = defineProps<{
-  postId: number
+// 定义 emits
+const emit = defineEmits<{
+  (e: 'close'): void
 }>()
 
-const emit = defineEmits(['success'])
+// 搜索状态
+const keyword = ref('')
+const loading = ref(false)
+const posts = ref<PostSummaryDto[]>([])
+const pages = ref<PageSummaryDto[]>([])
+const error = ref<string | null>(null)
 
-const form = ref<CreateCommentRequest>({
-  name: '',
-  email: '',
-  content: ''
+// 防抖处理
+let debounceTimer: number
+watch(keyword, (newVal) => {
+  clearTimeout(debounceTimer)
+  if (newVal.trim().length < 2) {
+    posts.value = []
+    pages.value = []
+    return
+  }
+  debounceTimer = setTimeout(() => performSearch(newVal), 300)
 })
 
-const loading = ref(false)
-const error = ref('')
-const success = ref(false)
-
-const submit = async () => {
-  if (!form.value.name || !form.value.email || !form.value.content) {
-    error.value = 'All fields are required'
-    return
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email)) {
-    error.value = 'Invalid email format'
-    return
-  }
-
+// 执行搜索
+const performSearch = async (q: string) => {
   loading.value = true
-  error.value = ''
-
+  error.value = null
   try {
-    await publicApi.addComment(props.postId, form.value)
-    success.value = true
-    form.value = { name: '', email: '', content: '' }
-    emit('success')
-  } catch (err: any) {
-    error.value = err.response?.data?.message || 'Failed to submit comment'
+    const [postResults, pageResults] = await Promise.all([
+      publicApi.searchPosts(q),
+      publicApi.searchPages(q)
+    ])
+    posts.value = postResults
+    pages.value = pageResults
+  } catch (err) {
+    error.value = 'Search failed, please try again later.'
+    console.error(err)
   } finally {
     loading.value = false
   }
 }
+
+// 合并结果（用于计数）
+const totalCount = computed(() => posts.value.length + pages.value.length)
+
+// 关闭模态框
+const close = () => emit('close')
 </script>
 
 <template>
-  <div class="border border-zinc-200 dark:border-zinc-800 p-6">
-    <h3 class="text-sm font-bold uppercase tracking-widest mb-4">Post Comment</h3>
-
-    <div v-if="success" class="mb-4 p-3 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm">
-      Comment submitted successfully. It will appear after moderation.
-    </div>
-
-    <div v-if="error" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">
-      {{ error }}
-    </div>
-
-    <form @submit.prevent="submit" class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs uppercase tracking-widest mb-1">Name</label>
-          <input
-            v-model="form.name"
-            type="text"
-            required
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-            :disabled="loading"
-          />
-        </div>
-        <div>
-          <label class="block text-xs uppercase tracking-widest mb-1">Email</label>
-          <input
-            v-model="form.email"
-            type="email"
-            required
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-            :disabled="loading"
-          />
-          <p class="text-xs text-zinc-500 mt-1">Your email will not be published.</p>
-        </div>
-      </div>
-
-      <div>
-        <label class="block text-xs uppercase tracking-widest mb-1">Comment</label>
-        <textarea
-          v-model="form.content"
-          required
-          rows="4"
-          class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-          :disabled="loading"
-        ></textarea>
-      </div>
-
-      <div class="flex justify-end">
-        <button
-          type="submit"
-          :disabled="loading"
-          class="px-6 py-2 text-white text-sm font-bold uppercase tracking-tighter transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          :style="{
-            backgroundColor: loading ? undefined : '#18181b',
-          }"
-          @mouseenter="$event.target.style.backgroundColor = '#27272a'"
-          @mouseleave="$event.target.style.backgroundColor = '#18181b'"
-        >
-          {{ loading ? 'Submitting...' : 'Submit Comment' }}
+  <div class="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/50 backdrop-blur-sm" @click.self="close">
+    <div class="w-full max-w-2xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-lg overflow-hidden">
+      <!-- search input box -->
+      <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
+        <div i-carbon-search class="w-5 h-5 text-zinc-400" />
+        <input
+          v-model="keyword"
+          type="text"
+          placeholder="Search for articles or pages…"
+          class="flex-1 bg-transparent border-none outline-none text-lg"
+          autofocus
+        />
+        <button @click="close" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+          <div i-carbon-close class="w-5 h-5" />
         </button>
       </div>
-    </form>
+
+      <!-- Search results -->
+      <div class="max-h-[70vh] overflow-y-auto p-4">
+        <!-- loading -->
+        <div v-if="loading" class="py-12 text-center text-zinc-500">
+          <div class="animate-pulse">loading…</div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div v-else-if="error" class="py-12 text-center text-red-500">
+          {{ error }}
+        </div>
+
+        <!-- 无结果 -->
+        <div v-else-if="keyword.trim().length >= 2 && totalCount === 0" class="py-12 text-center text-zinc-500">
+          No content was found related to "{{ keyword }}"
+        </div>
+
+        <!-- 有结果 -->
+        <div v-else-if="totalCount > 0" class="space-y-6">
+          <!-- 文章结果 -->
+          <div v-if="posts.length > 0">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Post</h3>
+            <div class="space-y-2">
+              <router-link
+                v-for="post in posts"
+                :key="'post-'+post.id"
+                :to="`/post/${post.slug}`"
+                @click="close"
+                class="block p-3 border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-md transition"
+              >
+                <h4 class="font-bold">{{ post.title }}</h4>
+                <p class="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-1">{{ post.excerpt || '...' }}</p>
+                <div class="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                  <span>{{ post.categoryName }}</span>
+                  <span>·</span>
+                  <span>{{ new Date(post.createdAt).toLocaleDateString() }}</span>
+                </div>
+              </router-link>
+            </div>
+          </div>
+
+          <!-- 页面结果 -->
+          <div v-if="pages.length > 0">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">页面</h3>
+            <div class="space-y-2">
+              <router-link
+                v-for="page in pages"
+                :key="'page-'+page.id"
+                :to="`/page/${page.slug}`"
+                @click="close"
+                class="block p-3 border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-md transition"
+              >
+                <h4 class="font-bold">{{ page.title }}</h4>
+                <div class="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                  <span>Page</span>
+                  <span>·</span>
+                  <span>{{ new Date(page.createdAt).toLocaleDateString() }}</span>
+                </div>
+              </router-link>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入提示 -->
+        <div v-else-if="keyword.trim().length < 2" class="py-12 text-center text-zinc-500">
+          Enter at least 2 characters to start the search.
+        </div>
+      </div>
+    </div>
   </div>
 </template>
