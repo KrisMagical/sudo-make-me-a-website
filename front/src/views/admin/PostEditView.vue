@@ -17,6 +17,13 @@ const saving = ref(false)
 
 // 添加 Editor 组件的引用
 const editorRef = ref<InstanceType<typeof Editor>>()
+// 添加 MediaLibrary 组件的引用
+const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
+
+// 当图片上传成功时刷新媒体库
+const onImageUploaded = () => {
+  mediaLibraryRef.value?.fetchImages()
+}
 
 const isEditing = computed(() => route.name === 'admin-post-edit')
 const postId = computed(() => route.params.id || post.value?.id)
@@ -155,16 +162,20 @@ onMounted(fetchData)
 
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
+          <!-- 监听 image-uploaded 事件 -->
           <Editor
             ref="editorRef"
             v-model="post.content"
             owner-type="POST"
             :owner-id="post.id || 'new'"
+            @image-uploaded="onImageUploaded"
           />
         </div>
 
+        <!-- 绑定 ref -->
         <MediaLibrary
           v-if="post.id"
+          ref="mediaLibraryRef"
           owner-type="POST"
           :owner-id="post.id"
         />

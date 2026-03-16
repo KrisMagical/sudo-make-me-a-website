@@ -1,226 +1,84 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { postsApi } from '@/api/posts'
-import { categoriesApi } from '@/api/categories'
-import type { PostDetailDto, CategoryDto } from '@/types/api'
-import Editor from '@/components/admin/Editor.vue'
-import MediaLibrary from '@/components/admin/MediaLibrary.vue'
-import { notify } from '@/utils/feedback'
+import { ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
+import { publicApi } from '@/api/public';
+import SmartContent from '@/components/public/SmartContent.vue';
+import CommentForm from '@/components/public/CommentForm.vue';
 
-const route = useRoute()
-const router = useRouter()
-const categories = ref<CategoryDto[]>([])
-const post = ref<PostDetailDto | null>(null)
-const loading = ref(false)
-const saving = ref(false)
+const route = useRoute();
+const post = ref<any>(null);
+const comments = ref<any[]>([]);
 
-// 添加 Editor 组件的引用
-const editorRef = ref<InstanceType<typeof Editor>>()
-// 添加 MediaLibrary 组件的引用
-const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
+const loadData = async () => {
+  const slug = route.params.slug as string;
+  post.value = await publicApi.getPost(slug);
+  comments.value = await publicApi.getComments(post.value.id);
+};
 
-// 当图片上传成功时刷新媒体库
-const onImageUploaded = () => {
-  mediaLibraryRef.value?.fetchImages()
-}
-
-const isEditing = computed(() => route.name === 'admin-post-edit')
-const postId = computed(() => route.params.id || post.value?.id)
-
-const fetchData = async () => {
-  loading.value = true
+const handleLike = async (positive: boolean) => {
   try {
-    categories.value = await categoriesApi.list()
-    const slug = route.params.slug as string
-    if (isEditing.value && slug) {
-      post.value = await postsApi.getDetail(slug)
-    } else {
-      post.value = {
-        id: 0,
-        title: '',
-        content: '',
-        slug: '',
-        createdAt: new Date().toISOString(),
-        updateAt: new Date().toISOString(),
-        likeCount: 0,
-        dislikeCount: 0,
-        viewCount: 0,
-        categoryName: '',
-        comments: [],
-        images: [],
-        videos: []
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const generateSlug = () => {
-  if (!post.value?.title) return
-  post.value.slug = post.value.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
-const save = async () => {
-  if (!post.value || !post.value.categoryName) {
-    notify('Please select a category', 'error')
-    return
-  }
-  const selectedCategory = categories.value.find(c => c.name === post.value?.categoryName)
-  const categorySlug = selectedCategory ? selectedCategory.slug : ''
-
-  if (!categorySlug) {
-    notify('Invalid category selected', 'error')
-    return
-  }
-
-  saving.value = true
-  try {
-    let savedPost: PostDetailDto
-    if (isEditing.value) {
-      await postsApi.update(post.value.id, categorySlug, post.value)
-      savedPost = post.value
-      notify('Post updated successfully', 'success')
-    } else {
-      savedPost = await postsApi.create(categorySlug, post.value)
-      notify('Post created successfully', 'success')
-      // 跳转到编辑页
-      await router.push({ name: 'admin-post-edit', params: { slug: savedPost.slug } })
-      // 重新获取 post 数据以更新 ID
-      post.value = savedPost
-    }
-
-    // 处理暂存图片上传
-    if (editorRef.value && post.value && post.value.id) {
-      await editorRef.value.processPendingUploads(post.value.id)
-    }
+    const res = await publicApi.likePost(post.value.id, positive);
+    // 更新成功：刷新点赞/点踩数
+    post.value.likeCount = res.likes;
+    post.value.dislikeCount = res.dislikes;
   } catch (error: any) {
-    // 默认错误消息
-    let message = isEditing.value ? 'Failed to update post' : 'Failed to create post'
-
-    // 尝试提取后端返回的具体错误信息
-    if (error.response?.data?.error) {
-      message = error.response.data.error
-    } else if (error.response?.data?.message) {
-      message = error.response.data.message
-    } else if (error.message) {
-      message = error.message
-    }
-
-    notify(message, 'error')
-  } finally {
-    saving.value = false
+    // 从后端返回的错误结构中提取 message 字段
+    const message = error.response?.data?.message || 'An error occurred. Please try again.';
+    alert(message); // 提示用户（可使用更友好的 toast 组件替换）
   }
-}
+};
 
-onMounted(fetchData)
+onMounted(loadData);
 </script>
 
 <template>
-  <div class="space-y-8">
-    <div class="flex justify-between items-end border-b-2 border-zinc-800 pb-2">
-      <h2 class="text-2xl font-bold tracking-tighter">
-        {{ isEditing ? 'EDIT_POST' : 'NEW_POST' }}
-      </h2>
+  <article v-if="post" class="max-w-2xl mx-auto py-12 px-4">
+    <header class="mb-8 border-b border-zinc-100 dark:border-zinc-800 pb-8">
+      <h1 class="text-3xl font-bold tracking-tighter mb-4">{{ post.title }}</h1>
+
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-mono uppercase tracking-tighter text-zinc-500 dark:text-zinc-400">
+        <span class="text-zinc-800 dark:text-zinc-200 font-bold">POST / {{ post.categoryName }}</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
+        <span>VIEWS: {{ post.viewCount }}</span>
+        <span class="text-zinc-300 dark:text-zinc-700">|</span>
+        <span>CREATED: {{ new Date(post.createdAt).toLocaleDateString() }}</span>
+
+        <template v-if="post.updatedAt && post.updatedAt !== post.createdAt">
+          <span class="text-zinc-300 dark:text-zinc-700">|</span>
+          <span class="text-zinc-400 dark:text-zinc-500">UPDATED: {{ new Date(post.updatedAt).toLocaleDateString() }}</span>
+        </template>
+      </div>
+    </header>
+
+    <SmartContent :content="post.content" class="mb-12 text-lg" />
+
+    <!-- 点赞/踩区域 - 增加颜色和文字标签 -->
+    <div class="flex items-center gap-6 border-y border-zinc-100 py-6 mb-12">
       <button
-        @click="save"
-        :disabled="saving || !post"
-        class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+        @click="handleLike(true)"
+        class="flex items-center gap-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
       >
-        {{ saving ? 'Saving...' : isEditing ? 'Update Post' : 'Create Post' }}
+        <div i-carbon-thumbs-up />
+        <span>Like</span> {{ post.likeCount }}
+      </button>
+      <button
+        @click="handleLike(false)"
+        class="flex items-center gap-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+      >
+        <div i-carbon-thumbs-down />
+        <span>Dislike</span> {{ post.dislikeCount }}
       </button>
     </div>
 
-    <div v-if="loading" class="italic opacity-50">Loading...</div>
-
-    <div v-else-if="post" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 space-y-6">
-        <div>
-          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Title</label>
-          <input
-            v-model="post.title"
-            type="text"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 text-xl font-bold"
-            placeholder="Post Title"
-            @blur="generateSlug"
-          />
-        </div>
-
-        <div>
-          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Slug</label>
-          <input
-            v-model="post.slug"
-            type="text"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono"
-            placeholder="post-slug"
-          />
-        </div>
-
-        <div>
-          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
-          <!-- 监听 image-uploaded 事件 -->
-          <Editor
-            ref="editorRef"
-            v-model="post.content"
-            owner-type="POST"
-            :owner-id="post.id || 'new'"
-            @image-uploaded="onImageUploaded"
-          />
-        </div>
-
-        <!-- 绑定 ref -->
-        <MediaLibrary
-          v-if="post.id"
-          ref="mediaLibraryRef"
-          owner-type="POST"
-          :owner-id="post.id"
-        />
-      </div>
-
-      <div class="space-y-6">
-        <div>
-          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Category</label>
-          <select
-            v-model="post.categoryName"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-          >
-            <option value="" disabled>Select a category</option>
-            <option
-              v-for="category in categories"
-              :key="category.id"
-              :value="category.name"
-            >
-              {{ category.name }}
-            </option>
-          </select>
-        </div>
-
-        <div v-if="isEditing" class="border border-zinc-200 dark:border-zinc-800 p-4">
-          <h4 class="text-sm font-bold uppercase tracking-widest mb-3">Statistics</h4>
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Likes</span>
-              <span>{{ post.likeCount }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Dislikes</span>
-              <span>{{ post.dislikeCount }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Views</span>
-              <span>{{ post.viewCount }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-zinc-500">Created</span>
-              <span class="font-mono">{{ new Date(post.createdAt).toLocaleDateString() }}</span>
-            </div>
-          </div>
+    <section>
+      <h3 class="text-sm font-bold uppercase tracking-widest mb-6">Comments</h3>
+      <div class="space-y-8 mb-12">
+        <div v-for="c in comments" :key="c.id" class="border-l-2 border-zinc-100 pl-4">
+          <div class="text-xs font-bold mb-1">{{ c.name }} <span class="font-normal text-zinc-400">— {{ new Date(c.createdAt).toLocaleDateString() }}</span></div>
+          <p class="text-sm text-zinc-600 dark:text-zinc-400">{{ c.content }}</p>
         </div>
       </div>
-    </div>
-  </div>
+      <CommentForm :post-id="post.id" @success="loadData" />
+    </section>
+  </article>
 </template>

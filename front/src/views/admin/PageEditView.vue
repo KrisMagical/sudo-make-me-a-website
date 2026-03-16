@@ -18,6 +18,13 @@ const searchTerm = ref('')
 
 // 添加 Editor 组件的引用
 const editorRef = ref<InstanceType<typeof Editor>>()
+// 添加 MediaLibrary 组件的引用
+const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
+
+// 当图片上传成功时刷新媒体库
+const onImageUploaded = () => {
+  mediaLibraryRef.value?.fetchImages()
+}
 
 const isEditing = computed(() => route.name === 'admin-page-edit')
 const indentedPages = computed(() => buildIndentedList(allPages.value, page.value?.id))
@@ -228,17 +235,21 @@ onMounted(fetchData)
           </p>
         </div>
 
+        <!-- 监听 image-uploaded 事件 -->
         <Editor
           ref="editorRef"
           v-model="page.content"
           owner-type="PAGE"
           :owner-id="page.id || 0"
           :owner-slug="page.slug"
+          @image-uploaded="onImageUploaded"
         />
 
-        <!-- 只在编辑现有页面且页面有有效ID时才显示MediaLibrary -->
+        <!-- 只在编辑现有页面且页面有有效 ID 时才显示 MediaLibrary -->
+        <!-- 绑定 ref，并传递 owner-slug -->
         <MediaLibrary
           v-if="isEditing && page.id && page.id > 0"
+          ref="mediaLibraryRef"
           owner-type="PAGE"
           :owner-id="page.id"
           :owner-slug="page.slug"

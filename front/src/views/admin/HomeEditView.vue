@@ -10,6 +10,14 @@ const home = ref<HomeProfileDto | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 
+// 媒体库引用
+const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
+
+// 当图片上传成功时刷新媒体库
+const onImageUploaded = () => {
+  mediaLibraryRef.value?.fetchImages()
+}
+
 const fetchHome = async () => {
   loading.value = true
   try {
@@ -64,15 +72,19 @@ onMounted(fetchHome)
 
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
+          <!-- 监听 image-uploaded 事件 -->
           <Editor
             v-model="home.content"
             owner-type="HOME"
             :owner-id="home.id"
+            @image-uploaded="onImageUploaded"
           />
         </div>
 
+        <!-- 绑定 ref -->
         <MediaLibrary
           v-if="home.id"
+          ref="mediaLibraryRef"
           owner-type="HOME"
           :owner-id="home.id"
         />
