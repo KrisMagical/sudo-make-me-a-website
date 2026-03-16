@@ -67,6 +67,11 @@ watch(() => props.ownerSlug, (newSlug, oldSlug) => {
 })
 
 onMounted(fetchImages)
+
+defineExpose({
+  fetchImages
+})
+
 </script>
 
 <template>

@@ -5,53 +5,108 @@ import com.magiccode.backend.mapping.SocialMapper;
 import com.magiccode.backend.model.EmbeddedImage;
 import com.magiccode.backend.model.Social;
 import com.magiccode.backend.repository.SocialRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class SocialService {
     private final SocialRepository socialRepository;
     private final SocialMapper socialMapper;
     private final ImageService imageService;
+    private final TransactionTemplate transactionTemplate;
 
     public SocialDto create(SocialDto dto, MultipartFile iconFile, String externalIconUrl) {
+        // 非事务校验
         if (socialRepository.existsByName(dto.getName())) {
             throw new RuntimeException("Social already exists: " + dto.getName());
         }
 
-        Social social = socialMapper.toEntity(dto);
-        socialRepository.save(social);
+        // 处理文件（如果有）
+        ImageService.ProcessedFile pf;
+        if (iconFile != null && !iconFile.isEmpty()) {
+            pf = imageService.processFile(iconFile);
+        } else {
+            pf = null;
+        }
 
-        applyIcon(social, iconFile, externalIconUrl);
+        // 事务内执行数据库操作
+        return transactionTemplate.execute(status -> {
+            Social social = socialMapper.toEntity(dto);
+            social = socialRepository.save(social);
 
-        socialRepository.save(social);
-        return toDtoWithResolvedIcon(social);
+            if (pf != null) {
+                EmbeddedImage saved = imageService.saveImage(EmbeddedImage.OwnerType.SOCIAL, social.getId(),
+                        pf.data, pf.originalFilename, pf.contentType, pf.size);
+                social.setIconImageId(saved.getId());
+                social.setIconUrl(resolveIconUrl(social));
+            } else if (externalIconUrl != null && !externalIconUrl.isBlank()) {
+                social.setExternalIconUrl(externalIconUrl.trim());
+                social.setIconUrl(resolveIconUrl(social));
+            }
+
+            socialRepository.save(social);
+            return toDtoWithResolvedIcon(social);
+        });
     }
 
     public SocialDto update(Long id, SocialDto dto, MultipartFile iconFile, String externalIconUrl) {
-        Social social = socialRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Social not found"));
-        if (dto.getName() != null && !dto.getName().equals(social.getName())) {
-            if (socialRepository.existsByName(dto.getName())) {
+        // 非事务校验名称唯一性（排除自身）
+        if (dto.getName() != null && !dto.getName().isBlank()) {
+            Social existing = socialRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Social not found"));
+            if (!existing.getName().equals(dto.getName()) && socialRepository.existsByName(dto.getName())) {
                 throw new RuntimeException("Social name already exists: " + dto.getName());
             }
         }
-        if (dto.getName() != null) social.setName(dto.getName());
-        if (dto.getUrl() != null) social.setUrl(dto.getUrl());
-        if (dto.getDescription() != null) social.setDescription(dto.getDescription());
 
-        if ((iconFile != null && !iconFile.isEmpty()) || (externalIconUrl != null && !externalIconUrl.isBlank())) {
-            applyIcon(social, iconFile, externalIconUrl);
+        boolean hasFile = iconFile != null && !iconFile.isEmpty();
+        boolean hasExternal = externalIconUrl != null && !externalIconUrl.isBlank();
+
+        // 处理文件
+        ImageService.ProcessedFile pf;
+        if (hasFile) {
+            pf = imageService.processFile(iconFile);
+        } else {
+            pf = null;
         }
 
-        socialRepository.save(social);
-        return toDtoWithResolvedIcon(social);
+        // 事务内更新
+        return transactionTemplate.execute(status -> {
+            Social social = socialRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Social not found"));
+
+            if (dto.getName() != null) social.setName(dto.getName());
+            if (dto.getUrl() != null) social.setUrl(dto.getUrl());
+            if (dto.getDescription() != null) social.setDescription(dto.getDescription());
+
+            boolean changeIcon = hasFile || hasExternal;
+            if (changeIcon) {
+                // 删除旧图标（如果有）
+                if (social.getIconImageId() != null) {
+                    imageService.delete(EmbeddedImage.OwnerType.SOCIAL, social.getId(), social.getIconImageId());
+                    social.setIconImageId(null);
+                }
+                social.setExternalIconUrl(null);
+                social.setIconUrl(null);
+
+                if (hasFile) {
+                    EmbeddedImage saved = imageService.saveImage(EmbeddedImage.OwnerType.SOCIAL, social.getId(),
+                            pf.data, pf.originalFilename, pf.contentType, pf.size);
+                    social.setIconImageId(saved.getId());
+                } else if (hasExternal) {
+                    social.setExternalIconUrl(externalIconUrl.trim());
+                }
+                social.setIconUrl(resolveIconUrl(social));
+            }
+
+            socialRepository.save(social);
+            return toDtoWithResolvedIcon(social);
+        });
     }
 
     public void delete(Long id) {
@@ -71,36 +126,6 @@ public class SocialService {
         return socialRepository.findAll().stream()
                 .map(this::toDtoWithResolvedIcon)
                 .toList();
-    }
-
-    // -------------------- icon logic --------------------
-    private void applyIcon(Social social, MultipartFile iconFile, String externalIconUrl) {
-        boolean hasFile = iconFile != null && !iconFile.isEmpty();
-        boolean hasExternal = externalIconUrl != null && !externalIconUrl.isBlank();
-
-        if (!hasFile && !hasExternal) {
-            return;
-        }
-
-        if (social.getIconImageId() != null) {
-            imageService.delete(EmbeddedImage.OwnerType.SOCIAL, social.getId(), social.getIconImageId());
-            social.setIconImageId(null);
-        }
-
-        social.setExternalIconUrl(null);
-        social.setIconUrl(null);
-
-        if (hasFile) {
-            var saved = imageService.uploadToSocial(social.getId(), iconFile);
-            social.setIconImageId(saved.getId());
-            social.setIconUrl(resolveIconUrl(social));
-            return;
-        }
-
-        if (hasExternal) {
-            social.setExternalIconUrl(externalIconUrl.trim());
-            social.setIconUrl(resolveIconUrl(social));
-        }
     }
 
     private SocialDto toDtoWithResolvedIcon(Social social) {

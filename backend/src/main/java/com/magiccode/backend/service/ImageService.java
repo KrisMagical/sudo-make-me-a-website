@@ -4,11 +4,9 @@ import com.magiccode.backend.dto.ImageDto;
 import com.magiccode.backend.mapping.ImageMapper;
 import com.magiccode.backend.model.*;
 import com.magiccode.backend.repository.*;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,8 +17,6 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Data
-@Transactional
 public class ImageService {
     private final EmbeddedImageRepository embeddedImageRepository;
     private final ImageMapper imageMapper;
@@ -32,67 +28,21 @@ public class ImageService {
     private final SiteConfigRepository siteConfigRepository;
     private final BrowserIconRepository browserIconRepository;
 
-    // ---------- Upload ----------
-    public ImageDto uploadToPost(Long postId, MultipartFile file) {
-        Post post = postRepository.findById(postId).orElseThrow(() -> new RuntimeException("Post Not Found"));
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.POST, post.getId(), file);
-        return imageMapper.toDto(saved);
+    public static class ProcessedFile {
+        public final byte[] data;
+        public final String originalFilename;
+        public final String contentType;
+        public final long size;
+
+        public ProcessedFile(byte[] data, String originalFilename, String contentType, long size) {
+            this.data = data;
+            this.originalFilename = originalFilename;
+            this.contentType = contentType;
+            this.size = size;
+        }
     }
 
-    public ImageDto uploadToPage(String pageSlug, MultipartFile file) {
-        Page page = pageRepository.findBySlug(pageSlug);
-        if (page == null) throw new RuntimeException("Page Not Found");
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.PAGE, page.getId(), file);
-        return imageMapper.toDto(saved);
-    }
-
-    public ImageDto uploadToHome(MultipartFile file) {
-        HomeProfile home = ensureHomeExists();
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.HOME, home.getId(), file);
-        return imageMapper.toDto(saved);
-    }
-
-    public ImageDto uploadToSocial(Long socialId, MultipartFile file) {
-        Social social = socialRepository.findById(socialId)
-                .orElseThrow(() -> new RuntimeException("Social Not Found"));
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.SOCIAL, social.getId(), file);
-        return imageMapper.toDto(saved);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ImageDto uploadSiteAvatar(MultipartFile file) {
-        SiteConfig siteConfig = ensureSiteConfigExists();
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.SITE_AVATAR, siteConfig.getId(), file);
-
-        siteConfig.setSiteAvatarImageId(saved.getId());
-        siteConfigRepository.save(siteConfig);
-
-        return imageMapper.toDto(saved);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ImageDto uploadFavicon(MultipartFile file) {
-        BrowserIcon browserIcon = ensureBrowserIconExists();
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.FAVICON, browserIcon.getId(), file);
-
-        browserIcon.setFaviconImageId(saved.getId());
-        browserIconRepository.save(browserIcon);
-
-        return imageMapper.toDto(saved);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ImageDto uploadAppleTouchIcon(MultipartFile file) {
-        BrowserIcon browserIcon = ensureBrowserIconExists();
-        EmbeddedImage saved = save(EmbeddedImage.OwnerType.APPLE_TOUCH_ICON, browserIcon.getId(), file);
-
-        browserIcon.setAppleTouchIconImageId(saved.getId());
-        browserIconRepository.save(browserIcon);
-
-        return imageMapper.toDto(saved);
-    }
-
-    private EmbeddedImage save(EmbeddedImage.OwnerType ownerType, Long ownerId, MultipartFile file) {
+    public ProcessedFile processFile(MultipartFile file) {
         if (file == null || file.isEmpty()) throw new RuntimeException("File is Empty");
 
         String contentType = file.getContentType();
@@ -104,25 +54,127 @@ public class ImageService {
         try {
             bytes = file.getBytes();
         } catch (IOException e) {
-            throw new RuntimeException("Read file failed");
+            throw new RuntimeException("Read file failed", e);
         }
 
+        String safeName = generateSafeFilename(file, contentType);
+        return new ProcessedFile(bytes, safeName, contentType, file.getSize());
+    }
+
+    @Transactional
+    public EmbeddedImage saveImage(EmbeddedImage.OwnerType ownerType, Long ownerId,
+                                   byte[] data, String originalFilename, String contentType, long size) {
         EmbeddedImage image = EmbeddedImage.builder()
                 .ownerType(ownerType)
                 .ownerId(ownerId)
-                .originalFilename(generateSafeFilename(file, contentType))
+                .originalFilename(originalFilename)
                 .contentType(contentType)
-                .size(file.getSize())
-                .data(bytes)
+                .size(size)
+                .data(data)
                 .build();
-
         return embeddedImageRepository.save(image);
     }
 
+    // ---------- Upload ----------
+    @Transactional
+    protected ImageDto doUploadToPost(Long postId, ProcessedFile pf) {
+        Post post = postRepository.findById(postId).orElseThrow(() -> new RuntimeException("Post Not Found"));
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.POST, post.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadToPost(Long postId, MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadToPost(postId, pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadToPage(String pageSlug, ProcessedFile pf) {
+        Page page = pageRepository.findBySlug(pageSlug);
+        if (page == null) throw new RuntimeException("Page Not Found");
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.PAGE, page.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadToPage(String pageSlug, MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadToPage(pageSlug, pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadToHome(ProcessedFile pf) {
+        HomeProfile home = ensureHomeExists();
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.HOME, home.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadToHome(MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadToHome(pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadSiteAvatar(ProcessedFile pf) {
+        SiteConfig siteConfig = ensureSiteConfigExists();
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.SITE_AVATAR, siteConfig.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        siteConfig.setSiteAvatarImageId(saved.getId());
+        siteConfigRepository.save(siteConfig);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadSiteAvatar(MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadSiteAvatar(pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadFavicon(ProcessedFile pf) {
+        BrowserIcon browserIcon = ensureBrowserIconExists();
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.FAVICON, browserIcon.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        browserIcon.setFaviconImageId(saved.getId());
+        browserIconRepository.save(browserIcon);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadFavicon(MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadFavicon(pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadAppleTouchIcon(ProcessedFile pf) {
+        BrowserIcon browserIcon = ensureBrowserIconExists();
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.APPLE_TOUCH_ICON, browserIcon.getId(),
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        browserIcon.setAppleTouchIconImageId(saved.getId());
+        browserIconRepository.save(browserIcon);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadAppleTouchIcon(MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadAppleTouchIcon(pf);
+    }
+
+    @Transactional
+    protected ImageDto doUploadToSocial(Long socialId, ProcessedFile pf) {
+        Social social = socialRepository.findById(socialId).orElseThrow(() -> new RuntimeException("Social Not Found"));
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.SOCIAL, socialId,
+                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadToSocial(Long socialId, MultipartFile file) {
+        ProcessedFile pf = processFile(file);
+        return doUploadToSocial(socialId, pf);
+    }
+
     // ---------- List ----------
-    /**
-     * 通用方法：根据所有者类型和ID列出图片（推荐使用）
-     */
     @Transactional(readOnly = true)
     public List<ImageDto> listImages(EmbeddedImage.OwnerType ownerType, Long ownerId) {
         return imageMapper.toDtoList(
@@ -145,7 +197,8 @@ public class ImageService {
 
     @Transactional(readOnly = true)
     public List<ImageDto> listHomeImages() {
-        HomeProfile home = ensureHomeExists();
+        HomeProfile home = homeProfileRepository.findFirstByOrderByIdAsc()
+                .orElseThrow(() -> new RuntimeException("Home not configured"));
         return listImages(EmbeddedImage.OwnerType.HOME, home.getId());
     }
 
@@ -157,11 +210,13 @@ public class ImageService {
     }
 
     // ---------- Delete ----------
+    @Transactional
     public void delete(EmbeddedImage.OwnerType ownerType, Long ownerId, Long imageId) {
         EmbeddedImage img = get(ownerType, ownerId, imageId);
         embeddedImageRepository.delete(img);
     }
 
+    @Transactional
     public void deleteAll(EmbeddedImage.OwnerType ownerType, Long ownerId) {
         embeddedImageRepository.deleteAllByOwnerTypeAndOwnerId(ownerType, ownerId);
     }
@@ -175,11 +230,37 @@ public class ImageService {
         }
     }
 
-    private HomeProfile ensureHomeExists() {
+    @Transactional
+    protected HomeProfile ensureHomeExists() {
         return homeProfileRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> homeProfileRepository.save(
                         HomeProfile.builder().title("Home").content("").build()
                 ));
+    }
+
+    @Transactional
+    protected SiteConfig ensureSiteConfigExists() {
+        return siteConfigRepository.findByIsActiveTrue()
+                .orElseGet(() -> siteConfigRepository.save(
+                        SiteConfig.builder()
+                                .siteName("我的博客")
+                                .authorName("作者")
+                                .isActive(true)
+                                .build()
+                ));
+    }
+
+    @Transactional
+    protected BrowserIcon ensureBrowserIconExists() {
+        return browserIconRepository.findByIsActiveTrue()
+                .orElseGet(() -> {
+                    BrowserIcon newIcon = BrowserIcon.builder()
+                            .isActive(true)
+                            .build();
+                    BrowserIcon saved = browserIconRepository.save(newIcon);
+                    browserIconRepository.flush();
+                    return saved;
+                });
     }
 
     private String generateSafeFilename(MultipartFile file, String contentType) {
@@ -197,28 +278,5 @@ public class ImageService {
             default -> null;
         };
         return UUID.randomUUID() + (ext != null ? "." + ext : "");
-    }
-
-    private SiteConfig ensureSiteConfigExists() {
-        return siteConfigRepository.findByIsActiveTrue()
-                .orElseGet(() -> siteConfigRepository.save(
-                        SiteConfig.builder()
-                                .siteName("我的博客")
-                                .authorName("作者")
-                                .isActive(true)
-                                .build()
-                ));
-    }
-
-    private BrowserIcon ensureBrowserIconExists() {
-        return browserIconRepository.findByIsActiveTrue()
-                .orElseGet(() -> {
-                    BrowserIcon newIcon = BrowserIcon.builder()
-                            .isActive(true)
-                            .build();
-                    BrowserIcon saved = browserIconRepository.save(newIcon);
-                    browserIconRepository.flush();
-                    return saved;
-                });
     }
 }

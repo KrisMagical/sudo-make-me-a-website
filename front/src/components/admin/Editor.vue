@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
+import TiptapImage from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Youtube from '@tiptap/extension-youtube'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
-
 import { Table } from '@tiptap/extension-table'
 import { TableRow } from '@tiptap/extension-table-row'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { Markdown } from 'tiptap-markdown'
-// Math formula support
 import { Node } from '@tiptap/core'
-import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
-import { h } from 'vue'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -32,11 +28,25 @@ const props = defineProps<{
   ownerSlug?: string
 }>()
 
-const emit = defineEmits(['update:modelValue'])
+// 1. 添加 'image-uploaded' 事件定义
+const emit = defineEmits(['update:modelValue', 'image-uploaded'])
+
 const fileInput = ref<HTMLInputElement | null>(null)
 
-// Pending image queue
+// 暂存图片队列（待保存后上传）
 const pendingImages = ref<{ file: File, tempUrl: string }[]>([])
+
+// 上传队列项类型
+type QueueItem = {
+  file: File
+  tempUrl?: string // 已有的临时 URL（用于从 pending 重新上传）
+}
+const uploadQueue = ref<QueueItem[]>([])          // 待上传的文件队列
+const isUploading = ref(false)                    // 是否正在上传
+const uploadTotal = ref(0)                         // 总文件数
+const uploadCompleted = ref(0)                     // 已完成上传数
+const currentFileName = ref('')                    // 当前上传的文件名
+let cancelUpload = false                           // 取消上传标志
 
 // Custom math inline node
 const MathNode = Node.create({
@@ -44,7 +54,6 @@ const MathNode = Node.create({
   group: 'inline',
   inline: true,
   atom: true,
-
   addAttributes() {
     return {
       formula: {
@@ -57,7 +66,6 @@ const MathNode = Node.create({
       },
     }
   },
-
   parseHTML() {
     return [
       {
@@ -68,16 +76,13 @@ const MathNode = Node.create({
       }
     ]
   },
-
   renderHTML({ HTMLAttributes }) {
     return ['span', { class: 'math-inline', 'data-formula': HTMLAttributes.formula }, HTMLAttributes.formula]
   },
-
   addNodeView() {
     return ({ node }) => {
       const dom = document.createElement('span')
       dom.className = 'math-inline-render'
-
       try {
         katex.render(node.attrs.formula, dom, {
           throwOnError: false,
@@ -87,10 +92,7 @@ const MathNode = Node.create({
         dom.textContent = `$${node.attrs.formula}$`
         dom.className = 'math-inline-error'
       }
-
-      return {
-        dom,
-      }
+      return { dom }
     }
   },
 })
@@ -100,7 +102,6 @@ const MathBlockNode = Node.create({
   name: 'mathBlock',
   group: 'block',
   atom: true,
-
   addAttributes() {
     return {
       formula: {
@@ -113,7 +114,6 @@ const MathBlockNode = Node.create({
       },
     }
   },
-
   parseHTML() {
     return [
       {
@@ -124,16 +124,13 @@ const MathBlockNode = Node.create({
       }
     ]
   },
-
   renderHTML({ HTMLAttributes }) {
     return ['div', { class: 'math-block', 'data-formula': HTMLAttributes.formula }, HTMLAttributes.formula]
   },
-
   addNodeView() {
     return ({ node }) => {
       const dom = document.createElement('div')
       dom.className = 'math-block-render my-4 p-2 bg-gray-50 dark:bg-gray-800 rounded'
-
       try {
         katex.render(node.attrs.formula, dom, {
           throwOnError: false,
@@ -143,10 +140,7 @@ const MathBlockNode = Node.create({
         dom.textContent = `$$\n${node.attrs.formula}\n$$`
         dom.className = 'math-block-error'
       }
-
-      return {
-        dom,
-      }
+      return { dom }
     }
   },
 })
@@ -225,7 +219,6 @@ const editor = useEditor({
   content: props.modelValue,
   extensions: [
     StarterKit.configure({
-      // Configure StarterKit for better Markdown support
       heading: {
         levels: [1, 2, 3, 4, 5, 6],
       },
@@ -240,11 +233,11 @@ const editor = useEditor({
         },
       },
     }),
-    Image.configure({
+    TiptapImage.configure({
       inline: true,
       HTMLAttributes: {
         class: 'max-w-full h-auto border border-zinc-200 rounded my-4'
-      }
+      },
     }),
     Link.configure({
       openOnClick: false,
@@ -292,9 +285,9 @@ const editor = useEditor({
     MathNode,
     MathBlockNode,
     Markdown.configure({
-      html: true, // Allow HTML
-      transformPastedText: true, // Transform pasted Markdown
-      transformCopiedText: true, // Transform copied Markdown
+      html: true,
+      transformPastedText: true,
+      transformCopiedText: true,
     }),
   ],
   editorProps: {
@@ -302,16 +295,11 @@ const editor = useEditor({
       class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl focus:outline-none min-h-[500px] p-6 border border-zinc-300 dark:border-zinc-700 rounded-b-md bg-white dark:bg-gray-900'
     },
     handlePaste: (view, event) => {
-      // Handle pasted text, automatically detect math formulas
       const text = event.clipboardData?.getData('text/plain')
       if (text) {
-        // Detect inline formulas $...$
         const inlineMathRegex = /\$(.+?)\$/g
-        // Detect block formulas $$...$$
         const blockMathRegex = /\$\$(.+?)\$\$/gs
-
         if (blockMathRegex.test(text) || inlineMathRegex.test(text)) {
-          // Prevent default paste behavior, let Markdown plugin handle it
           return false
         }
       }
@@ -319,13 +307,11 @@ const editor = useEditor({
     },
   },
   onUpdate: ({ editor }) => {
-    // Export Markdown for backend storage
     const markdownContent = editor.storage.markdown.getMarkdown()
     emit('update:modelValue', markdownContent)
   }
 })
 
-// Watch external value changes, sync to editor
 watch(() => props.modelValue, (val) => {
   if (editor.value) {
     const currentContent = editor.value.storage.markdown.getMarkdown()
@@ -335,42 +321,112 @@ watch(() => props.modelValue, (val) => {
   }
 })
 
-// Trigger image upload
+// Trigger image upload (supports multiple files)
 const triggerImageUpload = () => fileInput.value?.click()
 
-// Handle file upload
-const handleFileUpload = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+// Handle file selection
+const handleFileUpload = (e: Event) => {
+  const files = (e.target as HTMLInputElement).files
+  if (!files || files.length === 0) return
 
-  let processedFile = file
+  for (let i = 0; i < files.length; i++) {
+    uploadQueue.value.push({ file: files[i] })
+  }
+
+  if (!isUploading.value) {
+    processQueue()
+  }
+
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+// 处理单个文件（压缩、插入临时图、上传）
+const processSingleFile = async (item: QueueItem): Promise<void> => {
+  let file = item.file
+  // 压缩
   if (file.size > 2 * 1024 * 1024) {
     try {
-      processedFile = await compressImage(file)
+      file = await compressImage(file)
       notify('Large image compressed')
     } catch (err) {
       notify('Image compression failed, using original', 'error')
     }
   }
 
-  const tempUrl = URL.createObjectURL(processedFile)
-
-  // Insert image
-  editor.value?.chain().focus().setImage({ src: tempUrl }).run()
+  let tempUrl = item.tempUrl
+  if (!tempUrl) {
+    tempUrl = URL.createObjectURL(file)
+    // 插入临时图片
+    editor.value?.chain().focus().setImage({ src: tempUrl }).run()
+  }
 
   const isValidId = typeof props.ownerId === 'number' && props.ownerId > 0
 
   if (isValidId) {
     try {
-      const realUrl = await uploadImage(processedFile, tempUrl, props.ownerId as number, props.ownerSlug)
+      const realUrl = await uploadImage(file, tempUrl, props.ownerId as number, props.ownerSlug)
       replaceImageUrl(tempUrl, realUrl)
       notify('Image uploaded successfully')
+      // 2. 上传成功后触发事件
+      emit('image-uploaded')
     } catch (err) {
       notify('Image upload failed', 'error')
+      throw err
     }
   } else {
-    pendingImages.value.push({ file: processedFile, tempUrl })
+    // 暂存图片，待保存时处理
+    pendingImages.value.push({ file, tempUrl })
     notify('Image will be uploaded after saving')
+  }
+}
+
+// 队列处理函数（递归）
+const processQueue = async () => {
+  // 3. 检查取消标志，如果为真，重置所有状态并复位标志，允许后续上传
+  if (cancelUpload) {
+    uploadQueue.value = []
+    isUploading.value = false
+    uploadTotal.value = 0
+    uploadCompleted.value = 0
+    currentFileName.value = ''
+    cancelUpload = false // 重要：复位标志，否则下次无法开始
+    return
+  }
+
+  if (uploadQueue.value.length === 0) {
+    isUploading.value = false
+    uploadTotal.value = 0
+    uploadCompleted.value = 0
+    currentFileName.value = ''
+    return
+  }
+
+  isUploading.value = true
+  uploadTotal.value = uploadQueue.value.length
+
+  const item = uploadQueue.value[0]
+  currentFileName.value = item.file.name
+
+  try {
+    await processSingleFile(item)
+    uploadQueue.value.shift()
+    uploadCompleted.value++
+  } catch (error) {
+    console.error('Upload failed:', error)
+    uploadQueue.value.shift()
+    uploadCompleted.value++
+  }
+
+  processQueue()
+}
+
+// 取消上传
+const handleCancelUpload = () => {
+  if (isUploading.value) {
+    cancelUpload = true
+    notify('Upload cancelled', 'info')
+    // 注意：实际的状态重置逻辑在 processQueue 的下一次迭代中执行
+    // 这样能确保当前的异步操作完成后 cleanly 退出
   }
 }
 
@@ -413,20 +469,19 @@ const replaceImageUrl = (oldUrl: string, newUrl: string) => {
   URL.revokeObjectURL(oldUrl)
 }
 
-// Process pending uploads
+// Process pending uploads (called after save)
 const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
   if (pendingImages.value.length === 0) return
 
+  // 将暂存图片加入上传队列，并传入已有的 tempUrl
   for (const pending of pendingImages.value) {
-    try {
-      const realUrl = await uploadImage(pending.file, pending.tempUrl, realOwnerId, realOwnerSlug)
-      replaceImageUrl(pending.tempUrl, realUrl)
-    } catch (err) {
-      console.error('Failed to upload pending image:', err)
-      notify('Some images failed to upload', 'error')
-    }
+    uploadQueue.value.push({ file: pending.file, tempUrl: pending.tempUrl })
   }
   pendingImages.value = []
+
+  if (!isUploading.value) {
+    processQueue()
+  }
 }
 
 // Add video
@@ -605,7 +660,24 @@ onBeforeUnmount(() => editor.value?.destroy())
         ↷
       </button>
 
-      <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileUpload" />
+      <input type="file" ref="fileInput" class="hidden" accept="image/*" multiple @change="handleFileUpload" />
+    </div>
+
+    <!-- 上传进度条 -->
+    <div v-if="isUploading" class="mt-2 p-2 border border-zinc-200 dark:border-zinc-800 rounded">
+      <div class="flex items-center justify-between text-xs mb-1">
+        <span class="text-zinc-600 dark:text-zinc-400">Uploading: {{ currentFileName }}</span>
+        <div class="flex items-center gap-2">
+          <span class="text-zinc-500">{{ uploadCompleted }}/{{ uploadTotal }}</span>
+          <button @click="handleCancelUpload" class="text-red-500 hover:text-red-700 text-xs font-bold">Cancel</button>
+        </div>
+      </div>
+      <div class="w-full bg-zinc-200 dark:bg-zinc-700 h-1 rounded overflow-hidden">
+        <div
+          class="h-full bg-blue-600 transition-all duration-300"
+          :style="{ width: `${(uploadCompleted / uploadTotal) * 100}%` }"
+        ></div>
+      </div>
     </div>
 
     <!-- Editor area -->
@@ -617,6 +689,10 @@ onBeforeUnmount(() => editor.value?.destroy())
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 样式保持不变 */
+</style>
 
 <style scoped>
 /* Ensure the editor content looks like the final page */
