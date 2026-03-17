@@ -1,10 +1,19 @@
-<!-- src/components/public/RecentCard.vue -->
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { PostSummaryDto, PageSummaryDto } from '@/types/api'
 
 type RecentItem = (PostSummaryDto | PageSummaryDto) & { type: 'post' | 'page' }
 
-defineProps<{ item: RecentItem }>()
+const props = defineProps<{ item: RecentItem }>()
+
+const processedExcerpt = computed(() => {
+  if (props.item.type === 'post') {
+    const post = props.item as PostSummaryDto
+    if (!post.excerpt) return ''
+    return post.excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+  }
+  return ''
+})
 </script>
 
 <template>
@@ -24,10 +33,11 @@ defineProps<{ item: RecentItem }>()
       </h3>
     </router-link>
 
-    <!-- 仅文章显示摘要 -->
-    <p v-if="item.type === 'post' && (item as PostSummaryDto).excerpt"
-       class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
-       v-html="(item as PostSummaryDto).excerpt"
+    <!-- 仅文章显示摘要，且移除Markdown图片 -->
+    <p
+      v-if="item.type === 'post' && processedExcerpt"
+      class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
+      v-html="processedExcerpt"
     />
 
     <div class="flex items-center justify-between text-xs text-zinc-500">

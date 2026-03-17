@@ -8,13 +8,14 @@ import { notify } from '@/utils/feedback'
 const pages = ref<PageDto[]>([])
 const loading = ref(false)
 
-// Use the computed property to ensure the list is always rebuilt when 'pages' changes
 const treePages = computed(() => buildIndentedList(pages.value))
 
 const fetchPages = async () => {
   loading.value = true
   try {
-    pages.value = await pagesApi.list()
+    const list = await pagesApi.list()
+    // 隐藏草稿数据 00100000
+    pages.value = list.filter(p => p.slug !== '00100000')
   } finally {
     loading.value = false
   }

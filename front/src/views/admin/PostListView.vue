@@ -7,7 +7,9 @@ const loading = ref(false);
 
 const fetchData = async () => {
   loading.value = true;
-  posts.value = await postsApi.listRecent(50);
+  const list = await postsApi.listRecent(50);
+  // 隐藏草稿数据 00100000
+  posts.value = list.filter(p => p.slug !== '00100000');
   loading.value = false;
 };
 

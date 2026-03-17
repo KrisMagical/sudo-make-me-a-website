@@ -8,8 +8,9 @@ const props = defineProps<{
 
 const cleanExcerpt = computed(() => {
   if (!props.post.excerpt) return ''
+  let text = props.post.excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
   const parser = new DOMParser()
-  const doc = parser.parseFromString(props.post.excerpt, 'text/html')
+  const doc = parser.parseFromString(text, 'text/html')
   const body = doc.body
   const mediaTags = ['img', 'video', 'iframe', 'audio', 'embed', 'object']
   mediaTags.forEach(tag => {

@@ -16,6 +16,12 @@ const posts = ref<PostSummaryDto[]>([])
 const pages = ref<PageSummaryDto[]>([])
 const error = ref<string | null>(null)
 
+// 清理摘要中的Markdown图片语法
+const cleanExcerpt = (excerpt: string) => {
+  if (!excerpt) return ''
+  return excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+}
+
 // 防抖处理
 let debounceTimer: number
 watch(keyword, (newVal) => {
@@ -103,7 +109,9 @@ const close = () => emit('close')
                 class="block p-3 border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-md transition"
               >
                 <h4 class="font-bold">{{ post.title }}</h4>
-                <p class="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-1">{{ post.excerpt || '...' }}</p>
+                <p class="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-1">
+                  {{ cleanExcerpt(post.excerpt) || '...' }}
+                </p>
                 <div class="flex items-center gap-3 mt-1 text-xs text-zinc-500">
                   <span>{{ post.categoryName }}</span>
                   <span>·</span>
@@ -115,7 +123,7 @@ const close = () => emit('close')
 
           <!-- 页面结果 -->
           <div v-if="pages.length > 0">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">页面</h3>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Page</h3>
             <div class="space-y-2">
               <router-link
                 v-for="page in pages"

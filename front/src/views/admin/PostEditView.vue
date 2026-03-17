@@ -8,6 +8,8 @@ import Editor from '@/components/admin/Editor.vue'
 import MediaLibrary from '@/components/admin/MediaLibrary.vue'
 import { notify } from '@/utils/feedback'
 
+const DRAFT_SLUG = '00100000'
+
 const route = useRoute()
 const router = useRouter()
 const categories = ref<CategoryDto[]>([])
@@ -15,41 +17,65 @@ const post = ref<PostDetailDto | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 
-// 添加 Editor 组件的引用
 const editorRef = ref<InstanceType<typeof Editor>>()
-// 添加 MediaLibrary 组件的引用
 const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
 
-// 当图片上传成功时刷新媒体库
 const onImageUploaded = () => {
   mediaLibraryRef.value?.fetchImages()
 }
 
 const isEditing = computed(() => route.name === 'admin-post-edit')
-const postId = computed(() => route.params.id || post.value?.id)
 
 const fetchData = async () => {
   loading.value = true
   try {
     categories.value = await categoriesApi.list()
+
+    // 如果没有分类且试图创建新文章，拦截
+    if (!isEditing.value && categories.value.length === 0) {
+      notify('Please create a Category first before writing a post', 'warning')
+      router.push('/admin/categories')
+      return
+    }
+
     const slug = route.params.slug as string
     if (isEditing.value && slug) {
       post.value = await postsApi.getDetail(slug)
     } else {
-      post.value = {
-        id: 0,
-        title: '',
-        content: '',
-        slug: '',
-        createdAt: new Date().toISOString(),
-        updateAt: new Date().toISOString(),
-        likeCount: 0,
-        dislikeCount: 0,
-        viewCount: 0,
-        categoryName: '',
-        comments: [],
-        images: [],
-        videos: []
+      let draftPost: PostDetailDto | null = null
+
+      // 尝试获取现存的草稿
+      try {
+        draftPost = await postsApi.getDetail(DRAFT_SLUG)
+      } catch (e) {
+        // 如果后端抛出404等异常，说明没有草稿记录，继续走到下一步创建
+      }
+
+      if (draftPost && draftPost.id) {
+        post.value = draftPost
+      } else {
+        // 选用任意一个(第一个)分类作为占位
+        const defaultCat = categories.value[0]
+        const newDraft: any = {
+          id: 0,
+          title: DRAFT_SLUG,
+          content: '',
+          slug: DRAFT_SLUG,
+          categoryName: defaultCat.name,
+          likeCount: 0,
+          dislikeCount: 0,
+          viewCount: 0,
+          comments: [],
+          images: [],
+          videos: []
+        }
+        post.value = await postsApi.create(defaultCat.slug, newDraft)
+      }
+
+      // 如果是刚创建或恢复的草稿，将展示给用户的标题和slug清空
+      if (post.value) {
+        if (post.value.title === DRAFT_SLUG) post.value.title = ''
+        if (post.value.slug === DRAFT_SLUG) post.value.slug = ''
       }
     }
   } finally {
@@ -66,10 +92,15 @@ const generateSlug = () => {
 }
 
 const save = async () => {
-  if (!post.value || !post.value.categoryName) {
+  if (!post.value?.title || !post.value?.slug || post.value.slug === DRAFT_SLUG) {
+    notify('Please enter a valid title to generate a slug', 'error')
+    return
+  }
+  if (!post.value.categoryName) {
     notify('Please select a category', 'error')
     return
   }
+
   const selectedCategory = categories.value.find(c => c.name === post.value?.categoryName)
   const categorySlug = selectedCategory ? selectedCategory.slug : ''
 
@@ -80,40 +111,51 @@ const save = async () => {
 
   saving.value = true
   try {
-    let savedPost: PostDetailDto
-    if (isEditing.value) {
-      await postsApi.update(post.value.id, categorySlug, post.value)
-      savedPost = post.value
-      notify('Post updated successfully', 'success')
-    } else {
-      savedPost = await postsApi.create(categorySlug, post.value)
-      notify('Post created successfully', 'success')
-      // 跳转到编辑页
-      await router.push({ name: 'admin-post-edit', params: { slug: savedPost.slug } })
-      // 重新获取 post 数据以更新 ID
-      post.value = savedPost
-    }
+    const targetSlug = isEditing.value ? (route.params.slug as string) : DRAFT_SLUG
 
-    // 处理暂存图片上传
-    if (editorRef.value && post.value && post.value.id) {
+    // 第一次保存：将草稿转正或更新，获取真实 id
+    await postsApi.update(post.value.id, categorySlug, post.value)
+    // 注意：post.value 中可能包含临时图片 URL，但第一次保存是为了获取真实 id
+    // 真实 id 已在 post.value 中，但为确保最新，可以从返回结果获取，但接口未返回，所以用原对象
+
+    // 等待图片上传完成
+    if (editorRef.value && post.value.id) {
       await editorRef.value.processPendingUploads(post.value.id)
     }
-  } catch (error: any) {
-    // 默认错误消息
-    let message = isEditing.value ? 'Failed to update post' : 'Failed to create post'
 
-    // 尝试提取后端返回的具体错误信息
-    if (error.response?.data?.error) {
-      message = error.response.data.error
-    } else if (error.response?.data?.message) {
-      message = error.response.data.message
-    } else if (error.message) {
-      message = error.message
+    // 第二次保存：将包含真实图片 URL 的内容提交到服务器
+    const savedPost = await postsApi.update(post.value.id, categorySlug, post.value)
+    post.value = savedPost
+
+    notify(isEditing.value ? 'Post updated successfully' : 'Post created successfully', 'success')
+
+    if (!isEditing.value) {
+      await router.push({ name: 'admin-post-edit', params: { slug: savedPost.slug } })
     }
-
+  } catch (error: any) {
+    let message = isEditing.value ? 'Failed to update post' : 'Failed to create post'
+    if (error.response?.data?.error) message = error.response.data.error
+    else if (error.response?.data?.message) message = error.response.data.message
+    else if (error.message) message = error.message
     notify(message, 'error')
   } finally {
     saving.value = false
+  }
+}
+
+const discardChanges = async () => {
+  const msg = isEditing.value ? 'Discard all unsaved changes?' : 'Cancel and delete this draft?'
+  if (confirm(msg)) {
+    if (isEditing.value) {
+      fetchData()
+    } else {
+      try {
+        await postsApi.delete(DRAFT_SLUG)
+        router.push('/admin/posts')
+      } catch (e) {
+        notify('Failed to delete draft post', 'error')
+      }
+    }
   }
 }
 
@@ -126,13 +168,21 @@ onMounted(fetchData)
       <h2 class="text-2xl font-bold tracking-tighter">
         {{ isEditing ? 'EDIT_POST' : 'NEW_POST' }}
       </h2>
-      <button
-        @click="save"
-        :disabled="saving || !post"
-        class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
-      >
-        {{ saving ? 'Saving...' : isEditing ? 'Update Post' : 'Create Post' }}
-      </button>
+      <div class="flex gap-2">
+        <button
+          @click="discardChanges"
+          class="px-3 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
+        >
+          {{ isEditing ? 'Discard' : 'Cancel' }}
+        </button>
+        <button
+          @click="save"
+          :disabled="saving || !post"
+          class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+        >
+          {{ saving ? 'Saving...' : isEditing ? 'Update Post' : 'Create Post' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="italic opacity-50">Loading...</div>
@@ -162,7 +212,6 @@ onMounted(fetchData)
 
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
-          <!-- 监听 image-uploaded 事件 -->
           <Editor
             ref="editorRef"
             v-model="post.content"
@@ -172,7 +221,6 @@ onMounted(fetchData)
           />
         </div>
 
-        <!-- 绑定 ref -->
         <MediaLibrary
           v-if="post.id"
           ref="mediaLibraryRef"

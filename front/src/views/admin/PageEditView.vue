@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pagesApi } from '@/api/pages'
 import type { PageDto } from '@/types/api'
@@ -7,6 +7,8 @@ import Editor from '@/components/admin/Editor.vue'
 import MediaLibrary from '@/components/admin/MediaLibrary.vue'
 import { buildIndentedList } from '@/utils/tree'
 import { notify } from '@/utils/feedback'
+
+const DRAFT_SLUG = '00100000'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,23 +18,25 @@ const loading = ref(false)
 const saving = ref(false)
 const searchTerm = ref('')
 
-// 添加 Editor 组件的引用
 const editorRef = ref<InstanceType<typeof Editor>>()
-// 添加 MediaLibrary 组件的引用
 const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
 
-// 当图片上传成功时刷新媒体库
 const onImageUploaded = () => {
   mediaLibraryRef.value?.fetchImages()
 }
 
 const isEditing = computed(() => route.name === 'admin-page-edit')
+
+// 关键修复：获取当前数据库里真实存在的 slug。
+const currentDbSlug = computed(() => isEditing.value ? (route.params.slug as string) : DRAFT_SLUG)
+
 const indentedPages = computed(() => buildIndentedList(allPages.value, page.value?.id))
 
 const availablePagesToLink = computed(() => {
   if (!allPages.value) return []
   return allPages.value.filter(p =>
     p.id !== page.value?.id &&
+    p.slug !== DRAFT_SLUG && // 隐藏草稿页
     (searchTerm.value === '' ||
       p.title.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
       p.slug.includes(searchTerm.value))
@@ -43,25 +47,41 @@ const fetchData = async () => {
   loading.value = true
   try {
     const pagesList = await pagesApi.list()
-    allPages.value = pagesList
+    // 过滤掉列表里的草稿
+    allPages.value = pagesList.filter(p => p.slug !== DRAFT_SLUG)
 
     if (isEditing.value && route.params.slug) {
       page.value = await pagesApi.get(route.params.slug as string)
     } else {
-      page.value = {
-        id: 0,
-        slug: '',
-        title: '',
-        content: '',
-        parentId: null,
-        orderIndex: 0,
-        images: [],
-        videos: []
+      // 检查是否存在草稿
+      const draftExists = pagesList.find(p => p.slug === DRAFT_SLUG)
+
+      if (draftExists) {
+        page.value = await pagesApi.get(DRAFT_SLUG)
+      } else {
+        // 创建空白草稿
+        const newDraft: PageDto = {
+          id: 0,
+          slug: DRAFT_SLUG,
+          title: DRAFT_SLUG,
+          content: '',
+          parentId: null,
+          orderIndex: 0,
+          images: [],
+          videos: []
+        }
+        const rootPages = pagesList.filter(p => p.parentId === null && p.slug !== DRAFT_SLUG)
+        if (rootPages.length > 0) {
+          const maxOrder = Math.max(...rootPages.map(p => p.orderIndex))
+          newDraft.orderIndex = maxOrder + 1
+        }
+        page.value = await pagesApi.create(newDraft)
       }
-      const rootPages = pagesList.filter(p => p.parentId === null)
-      if (rootPages.length > 0) {
-        const maxOrder = Math.max(...rootPages.map(p => p.orderIndex))
-        page.value.orderIndex = maxOrder + 1
+
+      // 仅用于输入框展示，不影响底层接口使用的 currentDbSlug
+      if (page.value) {
+        if (page.value.title === DRAFT_SLUG) page.value.title = ''
+        if (page.value.slug === DRAFT_SLUG) page.value.slug = ''
       }
     }
   } catch (error) {
@@ -109,50 +129,46 @@ const insertPageLink = (targetPage: PageDto) => {
 }
 
 const save = async () => {
-  if (!page.value?.title || !page.value?.slug) {
-    notify('Title and Slug are required', 'error')
+  if (!page.value?.title || !page.value?.slug || page.value.slug === DRAFT_SLUG) {
+    notify('Please enter a valid title to generate a slug', 'error')
     return
   }
   saving.value = true
   try {
-    let savedPage: PageDto
-    if (isEditing.value) {
-      await pagesApi.update(page.value.slug, page.value)
-      savedPage = page.value
-      notify('Page updated & structure synced', 'success')
-    } else {
-      savedPage = await pagesApi.create(page.value)
-      notify('Page created & structure synced', 'success')
-      // 跳转到编辑页
-      await router.push({ name: 'admin-page-edit', params: { slug: savedPage.slug } })
-      // 更新本地 page 数据
-      page.value = savedPage
-    }
+    const targetSlug = isEditing.value ? (route.params.slug as string) : DRAFT_SLUG
 
-    // 处理暂存图片上传（需要真实的 page.id 和 page.slug）
-    if (editorRef.value && savedPage && savedPage.id && savedPage.slug) {
+    // 第一次保存：将草稿转正或更新，获取真实 id
+    const savedPage = await pagesApi.update(targetSlug, page.value)
+    page.value = savedPage // 更新前端状态
+
+    // 等待图片上传完成（此时编辑器内容已被替换为真实 URL）
+    if (editorRef.value) {
       await editorRef.value.processPendingUploads(savedPage.id, savedPage.slug)
     }
 
-    // 刷新数据以反映最新父子结构
-    await fetchData()
+    // 第二次保存：将包含真实图片 URL 的内容提交到服务器
+    const finalPage = await pagesApi.update(savedPage.slug, page.value)
+    page.value = finalPage
+
+    notify(isEditing.value ? 'Page updated & structure synced' : 'Page created & structure synced', 'success')
+
+    if (!isEditing.value) {
+      await router.push({ name: 'admin-page-edit', params: { slug: finalPage.slug } })
+    } else if (route.params.slug !== finalPage.slug) {
+      // 若修改了 Slug，需要替换 URL
+      await router.replace({ name: 'admin-page-edit', params: { slug: finalPage.slug } })
+    }
+
+    // 注意：不再调用 fetchData()，因为 page.value 已经是最新数据
   } catch (error: any) {
     if (error.response?.status === 401) {
       notify('Session expired. Please login again.', 'error')
       router.push('/admin/login')
     } else {
-      // 默认错误消息
       let message = isEditing.value ? 'Failed to update page' : 'Failed to create page'
-
-      // 尝试提取后端返回的具体错误信息
-      if (error.response?.data?.error) {
-        message = error.response.data.error
-      } else if (error.response?.data?.message) {
-        message = error.response.data.message
-      } else if (error.message) {
-        message = error.message
-      }
-
+      if (error.response?.data?.error) message = error.response.data.error
+      else if (error.response?.data?.message) message = error.response.data.message
+      else if (error.message) message = error.message
       notify(message, 'error')
     }
   } finally {
@@ -160,9 +176,19 @@ const save = async () => {
   }
 }
 
-const discardChanges = () => {
-  if (confirm('Discard all unsaved changes?')) {
-    fetchData()
+const discardChanges = async () => {
+  const msg = isEditing.value ? 'Discard all unsaved changes?' : 'Cancel and delete this draft?'
+  if (confirm(msg)) {
+    if (isEditing.value) {
+      fetchData()
+    } else {
+      try {
+        await pagesApi.delete(DRAFT_SLUG)
+        router.push('/admin/pages')
+      } catch (e) {
+        notify('Failed to delete draft page', 'error')
+      }
+    }
   }
 }
 
@@ -177,11 +203,10 @@ onMounted(fetchData)
       </h2>
       <div class="flex gap-2">
         <button
-          v-if="isEditing"
           @click="discardChanges"
           class="px-3 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
         >
-          Discard
+          {{ isEditing ? 'Discard' : 'Cancel' }}
         </button>
         <button
           @click="save"
@@ -196,7 +221,6 @@ onMounted(fetchData)
     <div v-if="loading" class="italic opacity-50">Loading...</div>
 
     <div v-else-if="page" class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-      <!-- 主编辑区 -->
       <div class="lg:col-span-3 space-y-6">
         <input
           v-model="page.title"
@@ -235,30 +259,26 @@ onMounted(fetchData)
           </p>
         </div>
 
-        <!-- 监听 image-uploaded 事件 -->
         <Editor
+          v-if="page"
           ref="editorRef"
           v-model="page.content"
           owner-type="PAGE"
           :owner-id="page.id || 0"
-          :owner-slug="page.slug"
+          :owner-slug="currentDbSlug"
           @image-uploaded="onImageUploaded"
         />
 
-        <!-- 只在编辑现有页面且页面有有效 ID 时才显示 MediaLibrary -->
-        <!-- 绑定 ref，并传递 owner-slug -->
         <MediaLibrary
-          v-if="isEditing && page.id && page.id > 0"
+          v-if="page.id && page.id > 0"
           ref="mediaLibraryRef"
           owner-type="PAGE"
           :owner-id="page.id"
-          :owner-slug="page.slug"
+          :owner-slug="currentDbSlug"
         />
       </div>
 
-      <!-- 右侧面板 -->
       <div class="space-y-8">
-        <!-- Page Settings -->
         <div class="border border-zinc-200 dark:border-zinc-800 p-4 bg-zinc-50 dark:bg-zinc-900/50">
           <h4 class="text-xs font-bold uppercase tracking-widest mb-4 text-zinc-500">Page Settings</h4>
           <div class="space-y-4">
@@ -277,7 +297,6 @@ onMounted(fetchData)
           </div>
         </div>
 
-        <!-- Insert Sub-Page -->
         <div class="border border-zinc-200 dark:border-zinc-800 p-4">
           <h4 class="text-xs font-bold uppercase tracking-widest mb-2 text-zinc-500">Insert Sub-Page</h4>
           <p class="text-xs text-zinc-400 mb-4">
@@ -304,7 +323,6 @@ onMounted(fetchData)
           </div>
         </div>
 
-        <!-- Live Preview & Info -->
         <div v-if="isEditing && page.slug" class="space-y-4">
           <router-link
             :to="`/page/${page.slug}`"

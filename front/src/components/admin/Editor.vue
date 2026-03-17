@@ -28,7 +28,6 @@ const props = defineProps<{
   ownerSlug?: string
 }>()
 
-// 1. 添加 'image-uploaded' 事件定义
 const emit = defineEmits(['update:modelValue', 'image-uploaded'])
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -39,7 +38,9 @@ const pendingImages = ref<{ file: File, tempUrl: string }[]>([])
 // 上传队列项类型
 type QueueItem = {
   file: File
-  tempUrl?: string // 已有的临时 URL（用于从 pending 重新上传）
+  tempUrl?: string
+  forcedOwnerId?: number
+  forcedOwnerSlug?: string
 }
 const uploadQueue = ref<QueueItem[]>([])          // 待上传的文件队列
 const isUploading = ref(false)                    // 是否正在上传
@@ -47,6 +48,9 @@ const uploadTotal = ref(0)                         // 总文件数
 const uploadCompleted = ref(0)                     // 已完成上传数
 const currentFileName = ref('')                    // 当前上传的文件名
 let cancelUpload = false                           // 取消上传标志
+
+// 用于等待上传完成的 Promise
+const uploadPromise = ref<Promise<void> | null>(null)
 
 // Custom math inline node
 const MathNode = Node.create({
@@ -343,7 +347,6 @@ const handleFileUpload = (e: Event) => {
 // 处理单个文件（压缩、插入临时图、上传）
 const processSingleFile = async (item: QueueItem): Promise<void> => {
   let file = item.file
-  // 压缩
   if (file.size > 2 * 1024 * 1024) {
     try {
       file = await compressImage(file)
@@ -356,68 +359,86 @@ const processSingleFile = async (item: QueueItem): Promise<void> => {
   let tempUrl = item.tempUrl
   if (!tempUrl) {
     tempUrl = URL.createObjectURL(file)
-    // 插入临时图片
     editor.value?.chain().focus().setImage({ src: tempUrl }).run()
   }
 
-  const isValidId = typeof props.ownerId === 'number' && props.ownerId > 0
+  const targetOwnerId = item.forcedOwnerId !== undefined ? item.forcedOwnerId : props.ownerId
+  const targetOwnerSlug = item.forcedOwnerSlug !== undefined ? item.forcedOwnerSlug : props.ownerSlug
+
+  const isValidId = typeof targetOwnerId === 'number' && targetOwnerId > 0
 
   if (isValidId) {
     try {
-      const realUrl = await uploadImage(file, tempUrl, props.ownerId as number, props.ownerSlug)
+      const realUrl = await uploadImage(file, tempUrl, targetOwnerId as number, targetOwnerSlug)
       replaceImageUrl(tempUrl, realUrl)
       notify('Image uploaded successfully')
-      // 2. 上传成功后触发事件
       emit('image-uploaded')
     } catch (err) {
       notify('Image upload failed', 'error')
       throw err
     }
   } else {
-    // 暂存图片，待保存时处理
     pendingImages.value.push({ file, tempUrl })
     notify('Image will be uploaded after saving')
   }
 }
 
-// 队列处理函数（递归）
-const processQueue = async () => {
-  // 3. 检查取消标志，如果为真，重置所有状态并复位标志，允许后续上传
-  if (cancelUpload) {
-    uploadQueue.value = []
+// 队列处理函数（支持等待）
+const processQueue = async (): Promise<void> => {
+  // 如果已有正在处理的 Promise，直接返回它
+  if (uploadPromise.value) {
+    return uploadPromise.value
+  }
+
+  const run = async () => {
+    if (cancelUpload) {
+      uploadQueue.value = []
+      isUploading.value = false
+      uploadTotal.value = 0
+      uploadCompleted.value = 0
+      currentFileName.value = ''
+      cancelUpload = false
+      return
+    }
+
+    if (uploadQueue.value.length === 0) {
+      isUploading.value = false
+      uploadTotal.value = 0
+      uploadCompleted.value = 0
+      currentFileName.value = ''
+      return
+    }
+
+    isUploading.value = true
+    uploadTotal.value = uploadQueue.value.length
+
+    while (uploadQueue.value.length > 0 && !cancelUpload) {
+      const item = uploadQueue.value[0]
+      currentFileName.value = item.file.name
+      try {
+        await processSingleFile(item)
+        uploadQueue.value.shift()
+        uploadCompleted.value++
+      } catch (error) {
+        console.error('Upload failed:', error)
+        uploadQueue.value.shift()
+        uploadCompleted.value++
+      }
+    }
+
+    if (cancelUpload) {
+      uploadQueue.value = []
+    }
     isUploading.value = false
     uploadTotal.value = 0
     uploadCompleted.value = 0
     currentFileName.value = ''
-    cancelUpload = false // 重要：复位标志，否则下次无法开始
-    return
+    cancelUpload = false
+    uploadPromise.value = null
   }
 
-  if (uploadQueue.value.length === 0) {
-    isUploading.value = false
-    uploadTotal.value = 0
-    uploadCompleted.value = 0
-    currentFileName.value = ''
-    return
-  }
-
-  isUploading.value = true
-  uploadTotal.value = uploadQueue.value.length
-
-  const item = uploadQueue.value[0]
-  currentFileName.value = item.file.name
-
-  try {
-    await processSingleFile(item)
-    uploadQueue.value.shift()
-    uploadCompleted.value++
-  } catch (error) {
-    console.error('Upload failed:', error)
-    uploadQueue.value.shift()
-    uploadCompleted.value++
-  }
-
-  processQueue()
+  uploadPromise.value = run()
+  await uploadPromise.value
 }
 
 // 取消上传
@@ -425,8 +446,6 @@ const handleCancelUpload = () => {
   if (isUploading.value) {
     cancelUpload = true
     notify('Upload cancelled', 'info')
-    // 注意：实际的状态重置逻辑在 processQueue 的下一次迭代中执行
-    // 这样能确保当前的异步操作完成后 cleanly 退出
   }
 }
 
@@ -469,19 +488,21 @@ const replaceImageUrl = (oldUrl: string, newUrl: string) => {
   URL.revokeObjectURL(oldUrl)
 }
 
-// Process pending uploads (called after save)
+// Process pending uploads (called after save) - 现在返回 Promise
 const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
   if (pendingImages.value.length === 0) return
 
-  // 将暂存图片加入上传队列，并传入已有的 tempUrl
   for (const pending of pendingImages.value) {
-    uploadQueue.value.push({ file: pending.file, tempUrl: pending.tempUrl })
+    uploadQueue.value.push({
+      file: pending.file,
+      tempUrl: pending.tempUrl,
+      forcedOwnerId: realOwnerId,
+      forcedOwnerSlug: realOwnerSlug
+    })
   }
   pendingImages.value = []
 
-  if (!isUploading.value) {
-    processQueue()
-  }
+  await processQueue()
 }
 
 // Add video
@@ -689,10 +710,6 @@ onBeforeUnmount(() => editor.value?.destroy())
     </div>
   </div>
 </template>
-
-<style scoped>
-/* 样式保持不变 */
-</style>
 
 <style scoped>
 /* Ensure the editor content looks like the final page */
