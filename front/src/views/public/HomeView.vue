@@ -127,12 +127,16 @@ onMounted(fetchData)
     </section>
 
     <section v-if="!loading && !error" class="mt-16 pt-8 border-t border-zinc-100 dark:border-zinc-900">
-      <div class="max-w-2xl mx-auto text-center">
-        <h2 class="text-lg font-bold mb-6">Connect</h2>
-        <SocialLinks display-mode="home" orientation="horizontal" />
-        <p class="mt-6 text-sm text-zinc-500 dark:text-zinc-400">
-          Follow me on social platforms
-        </p>
+      <div class="max-w-6xl mx-auto px-4">
+        <div class="text-center mb-10">
+          <h2 class="text-2xl font-bold mb-2">Connect</h2>
+          <p class="text-sm text-zinc-500 dark:text-zinc-400">
+            Follow me on social platforms
+          </p>
+        </div>
+
+        <!-- 改用 variant="home"（卡片模式） -->
+        <SocialLinks variant="home" />
       </div>
     </section>
 

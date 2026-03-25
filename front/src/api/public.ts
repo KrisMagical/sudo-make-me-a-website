@@ -13,7 +13,7 @@ export const publicApi = {
   getCategories: () => request.get<CategoryDto[]>('/api/categories'),
   getRecentPosts: (limit = 6) => request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
   getRecentPages: (limit = 6) => request.get<PageSummaryDto[]>('/api/pages/recent', { params: { limit } }),
-  getPostsByCategory: (slug: string) => request.get<PostSummaryDto[]>(`/api/posts/category/${slug}`),
+  getPostsByCategory: (slug: string, page = 0, size = 10) => request.get<PageResponse<PostSummaryDto>>(`/api/posts/category/${slug}`, {params: { page, size }}),
   searchPosts: (q: string) => request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q } }),
   searchPages: (q: string) => request.get<PageSummaryDto[]>('/api/pages/searchPages', { params: { q } }),
 

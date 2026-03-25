@@ -10,10 +10,13 @@ import com.magiccode.backend.model.EmbeddedImage;
 import com.magiccode.backend.model.EmbeddedVideo;
 import com.magiccode.backend.model.Post;
 import com.magiccode.backend.repository.CategoryRepository;
+import com.magiccode.backend.repository.CommentRepository;
 import com.magiccode.backend.repository.PostRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,14 +36,15 @@ public class PostService {
     private final VideoService videoService;
     private final VideoMapper videoMapper;
     private final ImageService imageService;
+    private final CommentRepository commentRepository;
 
-    public List<PostSummaryDto> getPostByCategorySlug(String slug) {
+    public Page<PostSummaryDto> getPostByCategorySlug(String slug, Pageable pageable) {
         Category category = categoryRepository.findBySlug(slug);
-        if (category != null) {
-            return postSummaryMapper.toPostSummaryDtoList(postRepository.findByCategory(category));
-        } else {
-            throw new RuntimeException("Post Not Found.");
+        if (category == null) {
+            throw new RuntimeException("Category Not Found.");
         }
+        Page<Post> postPage = postRepository.findByCategory(category, pageable);
+        return postPage.map(postSummaryMapper::toPostSummaryDto);
     }
 
     public PostDetailDto getPostBySlug(String slug) {
@@ -131,6 +135,7 @@ public class PostService {
         likeLogService.deleteAllByPostId(postId);
         imageService.deleteAll(EmbeddedImage.OwnerType.POST, postId);
         videoService.deleteAll(EmbeddedVideo.OwnerType.POST, postId);
+        commentRepository.deleteByPostId(postId);
         postRepository.delete(post);
     }
 

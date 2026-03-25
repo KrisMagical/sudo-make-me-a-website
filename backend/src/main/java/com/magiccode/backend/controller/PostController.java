@@ -7,12 +7,13 @@ import com.magiccode.backend.service.LikeLogService;
 import com.magiccode.backend.service.PostService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -23,12 +24,12 @@ public class PostController {
     private final LikeLogService likeLogService;
 
     @GetMapping("/category/{slug}")
-    public ResponseEntity<List<PostSummaryDto>> getPostByCategory(@PathVariable String slug) {
-        List<PostSummaryDto> postSummaryDto = postService.getPostByCategorySlug(slug);
-        if (postSummaryDto == null) {
-            return new ResponseEntity<>(Collections.emptyList(), HttpStatus.NOT_FOUND);
-        }
-        return new ResponseEntity<>(postSummaryDto, HttpStatus.OK);
+    public ResponseEntity<Page<PostSummaryDto>> getPostByCategory(
+            @PathVariable String slug,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Page<PostSummaryDto> postSummaryPage = postService.getPostByCategorySlug(slug, PageRequest.of(page, size));
+        return ResponseEntity.ok(postSummaryPage);
     }
 
     @GetMapping("/{slug}")

@@ -15,4 +15,5 @@ public class CreateCommentRequest {
     @Email
     private String email;
     private String content;
+    private Long parentId;
 }

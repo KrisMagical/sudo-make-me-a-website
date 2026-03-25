@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { notify } from '@/utils/feedback'; // 引入通知工具
+import { notify } from '@/utils/feedback';
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '');
@@ -93,6 +93,6 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     setAuth,
     logout,
-    startExpirationCheck // 导出此方法供 App.vue 初始化使用
+    startExpirationCheck
   };
 });

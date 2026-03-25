@@ -17,7 +17,7 @@ const processedExcerpt = computed(() => {
 </script>
 
 <template>
-  <article class="group border border-zinc-100 dark:border-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors p-6">
+  <article class="group border border-zinc-200 dark:border-zinc-600 hover:border-zinc-400 dark:hover:border-zinc-500 hover:shadow-md transition-all p-6 bg-white dark:bg-zinc-950">
     <div class="flex items-start justify-between mb-3">
       <div class="text-xs font-mono text-zinc-500 uppercase tracking-tighter">
         {{ item.type === 'post' ? item.categoryName || 'Post' : 'Page' }}
@@ -41,7 +41,6 @@ const processedExcerpt = computed(() => {
     />
 
     <div class="flex items-center justify-between text-xs text-zinc-500">
-      <!-- 文章显示点赞/点踩，页面显示简单标识 -->
       <div v-if="item.type === 'post'" class="flex items-center space-x-4">
         <span class="flex items-center gap-1 text-green-600 dark:text-green-400">
           <div i-carbon-thumbs-up class="w-3 h-3" /> {{ (item as PostSummaryDto).likeCount }}
@@ -52,7 +51,6 @@ const processedExcerpt = computed(() => {
         <span>Views: {{ (item as PostSummaryDto).viewCount }}</span>
       </div>
       <div v-else class="text-zinc-400">
-        <!-- 页面无统计数据，留空或放一个图标 -->
         <div i-carbon-document class="w-4 h-4" />
       </div>
 
@@ -60,7 +58,7 @@ const processedExcerpt = computed(() => {
         :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`"
         class="font-bold uppercase tracking-tighter hover:underline"
       >
-        {{ item.type === 'post' ? '阅读 →' : '查看 →' }}
+        {{ item.type = 'Read →'}}
       </router-link>
     </div>
   </article>

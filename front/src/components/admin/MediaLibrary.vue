@@ -19,7 +19,7 @@ const images = ref<ImageDto[]>([])
 const fetchImages = async () => {
   try {
     let url = ''
-    
+
     if (props.ownerType === 'POST') {
       url = `/api/posts/${props.ownerId}/images`
     } else if (props.ownerType === 'PAGE') {
@@ -40,7 +40,7 @@ const fetchImages = async () => {
     images.value = await request.get(url)
   } catch (error: any) {
     console.error('Failed to fetch images:', error)
-    
+
     if (error.response?.status === 401) {
       console.warn('Authentication error when fetching images')
     }
@@ -49,7 +49,7 @@ const fetchImages = async () => {
 
 const deleteImage = async (imageId: number) => {
   if (!confirm('Delete this image?')) return
-  
+
   try {
     // 删除图片的 API 使用 ID 而不是 slug
     await request.delete(`/api/images/${props.ownerType}/${props.ownerId}/${imageId}`)
@@ -86,7 +86,7 @@ defineExpose({
       <div 
         v-for="img in images" 
         :key="img.id" 
-        class="group relative aspect-square border border-zinc-200 dark:border-zinc-800 p-1"
+        class="group relative aspect-square border border-zinc-200 dark:border-zinc-700 p-1"
       >
         <img 
           :src="img.url" 

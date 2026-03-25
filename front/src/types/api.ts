@@ -39,6 +39,8 @@ export interface CommentDto {
   name: string;
   content: string;
   createdAt: string;
+  parentId?: number;
+  author: boolean;
 }
 
 export interface CategoryDto {
@@ -126,6 +128,7 @@ export interface CreateCommentRequest {
   name: string;
   email: string;
   content: string;
+  parentId?: number;
 }
 
 export interface MovePageRequest {
@@ -172,4 +175,28 @@ export interface BrowserIconDto {
   appleTouchIconImageId: number | null;
   appleTouchIconUrl: string;
   isActive: boolean;
+}
+
+export interface CommentSearchResult {
+  id: number;
+  name: string;
+  email: string;
+  content: string;
+  createdAt: string;
+  parentId: number | null;
+  author: boolean;
+  postId: number;
+  postTitle: string;
+  postSlug: string;
+  parentExists: boolean;
+  parentName?: string;
+  parentContent?: string;
+}
+
+export interface PageResponse<T> {
+    content: T[];
+    totalElements: number;
+    totalPages: number;
+    size: number;
+    number: number;
 }

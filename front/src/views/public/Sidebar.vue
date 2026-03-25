@@ -4,11 +4,14 @@ import { useRoute } from 'vue-router'
 import request from '@/utils/request'
 import type { SidebarDto, PageTreeNodeDto, CategoryDto, SiteConfigDto } from '@/types/api'
 import SocialLinks from '@/components/public/SocialLinks.vue'
+import { useThemeStore } from '@/stores/themeStore'
 
 const route = useRoute()
 const isMobile = ref(false)
 const isSidebarOpen = ref(false) // 控制移动端（遮罩层平移）
-const isPcCollapsed = ref(false) // 新增：控制 PC 端（宽度重排收缩）
+const isPcCollapsed = ref(false)
+const pagesSectionExpanded = ref(false)
+const themeStore = useThemeStore()
 
 // 侧边栏数据
 const sidebarData = ref<SidebarDto | null>(null)
@@ -288,10 +291,9 @@ const handleLinkClick = () => {
         ? 'md:w-0 md:opacity-0 md:border-none'
         : 'md:w-64 md:opacity-100 md:border-r'
     ]"
-    class="bg-white dark:bg-zinc-950 border-zinc-100 dark:border-zinc-900 overflow-hidden"
-  >
-    <!-- 内部容器：应用 sidebar-scroll-container 类以优化滚动条 -->
-    <div class="sidebar-scroll-container h-full overflow-y-auto p-6 pb-20">
+    class="bg-white dark:bg-zinc-950 border-zinc-100 dark:border-zinc-700 overflow-hidden"
+      >
+        <div class="sidebar-scroll-container h-full overflow-y-auto p-6 pb-20 w-64">
       <!-- 用户信息区 -->
       <div class="mb-8">
         <router-link
@@ -323,73 +325,74 @@ const handleLinkClick = () => {
 
       <!-- 静态页面导航 -->
       <nav class="mb-8">
-        <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-          Pages
-        </h3>
-        <div v-if="loading" class="space-y-1">
-          <div v-for="i in 3" :key="i" class="h-8 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded"></div>
+        <button
+          @click="pagesSectionExpanded = !pagesSectionExpanded"
+          class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-widest text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-3 transition-colors"
+        >
+          <span>Pages</span>
+          <span :class="pagesSectionExpanded ? 'i-carbon-chevron-up' : 'i-carbon-chevron-down'" class="text-base"></span>
+        </button>
+
+        <div v-if="pagesSectionExpanded">
+          <div v-if="loading" class="space-y-1">
+            <div v-for="i in 3" :key="i" class="h-8 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded"></div>
+          </div>
+
+          <ul v-else class="space-y-1 max-h-[340px] overflow-y-auto pr-2 custom-scroll">
+            <li v-for="page in renderedPages" :key="page.id">
+              <!-- 原有页面项代码保持完全不变（包括展开箭头、子页面等） -->
+              <div class="flex items-center">
+                <router-link
+                  :to="`/page/${page.slug}`"
+                  @click="handleLinkClick"
+                  :class="[
+                    'flex-1 py-2 px-3 rounded-md transition-colors text-sm',
+                    'hover:bg-zinc-100 dark:hover:bg-zinc-900',
+                    {
+                      'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(page),
+                      'text-zinc-700 dark:text-zinc-300': !isActive(page)
+                    }
+                  ]"
+                  :style="{ paddingLeft: `${page.depth * 20 + 12}px` }"
+                >
+                  {{ page.title }}
+                </router-link>
+
+                <button
+                  v-if="page.hasChildren"
+                  @click="togglePage(page.id, page.hasChildren)"
+                  class="p-1 ml-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                >
+                  <div v-if="page.isExpanded" class="w-4 h-4 i-carbon-chevron-down"></div>
+                  <div v-else class="w-4 h-4 i-carbon-chevron-right"></div>
+                </button>
+              </div>
+
+              <!-- 子页面（原有 transition 保持不变） -->
+              <transition name="slide">
+                <ul v-if="page.children && page.children.length > 0 && page.isExpanded" class="mt-1">
+                  <li v-for="child in page.children" :key="child.id">
+                    <router-link
+                      :to="`/page/${child.slug}`"
+                      @click="handleLinkClick"
+                      :class="[
+                        'block py-2 px-3 rounded-md transition-colors text-sm ml-4',
+                        'hover:bg-zinc-100 dark:hover:bg-zinc-900',
+                        {
+                          'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(child),
+                          'text-zinc-700 dark:text-zinc-300': !isActive(child)
+                        }
+                      ]"
+                      :style="{ paddingLeft: `${child.depth * 20 + 12}px` }"
+                    >
+                      {{ child.title }}
+                    </router-link>
+                  </li>
+                </ul>
+              </transition>
+            </li>
+          </ul>
         </div>
-        <ul v-else class="space-y-1">
-          <li v-for="page in renderedPages" :key="page.id">
-            <!-- 页面项 -->
-            <div class="flex items-center">
-              <router-link
-                :to="`/page/${page.slug}`"
-                @click="handleLinkClick"
-                :class="[
-                  'flex-1 py-2 px-3 rounded-md transition-colors text-sm',
-                  'hover:bg-zinc-100 dark:hover:bg-zinc-900',
-                  {
-                    'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(page),
-                    'text-zinc-700 dark:text-zinc-300': !isActive(page)
-                  }
-                ]"
-                :style="{ paddingLeft: `${page.depth * 20 + 12}px` }"
-              >
-                {{ page.title }}
-              </router-link>
-
-              <!-- 展开/收起箭头 -->
-              <button
-                v-if="page.hasChildren"
-                @click="togglePage(page.id, page.hasChildren)"
-                class="p-1 ml-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-              >
-                <div
-                  v-if="page.isExpanded"
-                  class="w-4 h-4 i-carbon-chevron-down"
-                ></div>
-                <div
-                  v-else
-                  class="w-4 h-4 i-carbon-chevron-right"
-                ></div>
-              </button>
-            </div>
-
-            <!-- 子页面 -->
-            <transition name="slide">
-              <ul v-if="page.children && page.children.length > 0 && page.isExpanded" class="mt-1">
-                <li v-for="child in page.children" :key="child.id">
-                  <router-link
-                    :to="`/page/${child.slug}`"
-                    @click="handleLinkClick"
-                    :class="[
-                      'block py-2 px-3 rounded-md transition-colors text-sm ml-4',
-                      'hover:bg-zinc-100 dark:hover:bg-zinc-900',
-                      {
-                        'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(child),
-                        'text-zinc-700 dark:text-zinc-300': !isActive(child)
-                      }
-                    ]"
-                    :style="{ paddingLeft: `${child.depth * 20 + 12}px` }"
-                  >
-                    {{ child.title }}
-                  </router-link>
-                </li>
-              </ul>
-            </transition>
-          </li>
-        </ul>
       </nav>
 
       <!-- 分类导航 -->
@@ -421,18 +424,31 @@ const handleLinkClick = () => {
       </nav>
 
       <!-- 分隔线 -->
-      <div class="border-t border-zinc-100 dark:border-zinc-900 my-6"></div>
+      <div class="border-t border-zinc-100 dark:border-zinc-700 my-6"></div>
 
       <!-- 社交链接 -->
       <div v-if="!loading" class="mb-6">
         <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Connect
         </h3>
-        <SocialLinks display-mode="sidebar" orientation="vertical" />
+        <SocialLinks variant="sidebar" />
+      </div>
+
+      <div class="mb-6">
+        <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
+          Appearance
+        </h3>
+        <button
+          @click="themeStore.toggleTheme"
+          class="w-full flex items-center justify-between px-3 py-2 text-sm border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+        >
+          <span>{{ themeStore.isDark ? 'Dark Mode' : 'Light Mode' }}</span>
+          <div :class="themeStore.isDark ? 'i-carbon-moon' : 'i-carbon-sun'" class="w-5 h-5" />
+        </button>
       </div>
 
       <!-- 分隔线 -->
-      <div class="border-t border-zinc-100 dark:border-zinc-900 my-6"></div>
+      <div class="border-t border-zinc-100 dark:border-zinc-700 my-6"></div>
 
       <!-- 版权信息 -->
       <div class="text-xs text-zinc-500">
@@ -496,5 +512,13 @@ const handleLinkClick = () => {
   max-height: 500px;
   opacity: 1;
   transform: translateY(0);
+}
+
+.custom-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 10px;
 }
 </style>

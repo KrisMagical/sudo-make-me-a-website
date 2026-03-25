@@ -31,4 +31,10 @@ public class Comment {
     private String content;
     @CreationTimestamp
     private LocalDateTime createdAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id")
+    private Comment parent;
+
+    @Column(nullable = false)
+    private boolean author = false;
 }

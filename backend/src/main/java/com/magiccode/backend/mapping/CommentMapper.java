@@ -10,12 +10,15 @@ import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface CommentMapper {
+    @Mapping(source = "parent.id", target = "parentId")
     CommentDto toCommentDto(Comment comment);
 
     List<CommentDto> toCommentDtoList(List<Comment> comments);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "post", ignore = true)
+    @Mapping(target = "parent", ignore = true)
+    @Mapping(target = "author", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     Comment toCommentEntity(CreateCommentRequest request);
 

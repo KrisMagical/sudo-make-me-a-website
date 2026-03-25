@@ -16,10 +16,16 @@ const posts = ref<PostSummaryDto[]>([])
 const pages = ref<PageSummaryDto[]>([])
 const error = ref<string | null>(null)
 
-// 清理摘要中的Markdown图片语法
+// 清理摘要中的Markdown图片语法和URL
 const cleanExcerpt = (excerpt: string) => {
   if (!excerpt) return ''
-  return excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+  // 移除 markdown 图片语法
+  let cleaned = excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+  // 移除所有 URL (http/https 链接)
+  cleaned = cleaned.replace(/https?:\/\/[^\s<>\[\]()"]+/g, '')
+  // 清理多余的空白
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+  return cleaned
 }
 
 // 防抖处理

@@ -2,6 +2,7 @@ package com.magiccode.backend.repository;
 
 import com.magiccode.backend.model.Category;
 import com.magiccode.backend.model.Post;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,4 +26,6 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             " CASE WHEN p.content LIKE %:keyword% THEN 1 ELSE 0 END) DESC, " +
             "p.createdAt DESC")
     List<Post> searchByKeyword(@Param("keyword") String keyword, Pageable pageable);
+
+    Page<Post> findByCategory(Category category, Pageable pageable);
 }

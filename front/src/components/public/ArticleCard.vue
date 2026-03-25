@@ -26,7 +26,7 @@ const cleanExcerpt = computed(() => {
 </script>
 
 <template>
-  <article class="group border border-zinc-100 dark:border-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors p-6">
+  <article class="group border border-zinc-100 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors p-6">
     <div class="flex items-start justify-between mb-3">
       <div class="text-xs font-mono text-zinc-500 uppercase tracking-tighter">
         {{ post.categoryName }}

@@ -21,12 +21,10 @@ public class SocialService {
     private final TransactionTemplate transactionTemplate;
 
     public SocialDto create(SocialDto dto, MultipartFile iconFile, String externalIconUrl) {
-        // 非事务校验
         if (socialRepository.existsByName(dto.getName())) {
             throw new RuntimeException("Social already exists: " + dto.getName());
         }
 
-        // 处理文件（如果有）
         ImageService.ProcessedFile pf;
         if (iconFile != null && !iconFile.isEmpty()) {
             pf = imageService.processFile(iconFile);
@@ -34,7 +32,6 @@ public class SocialService {
             pf = null;
         }
 
-        // 事务内执行数据库操作
         return transactionTemplate.execute(status -> {
             Social social = socialMapper.toEntity(dto);
             social = socialRepository.save(social);
@@ -55,7 +52,6 @@ public class SocialService {
     }
 
     public SocialDto update(Long id, SocialDto dto, MultipartFile iconFile, String externalIconUrl) {
-        // 非事务校验名称唯一性（排除自身）
         if (dto.getName() != null && !dto.getName().isBlank()) {
             Social existing = socialRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("Social not found"));
@@ -67,7 +63,6 @@ public class SocialService {
         boolean hasFile = iconFile != null && !iconFile.isEmpty();
         boolean hasExternal = externalIconUrl != null && !externalIconUrl.isBlank();
 
-        // 处理文件
         ImageService.ProcessedFile pf;
         if (hasFile) {
             pf = imageService.processFile(iconFile);
@@ -75,7 +70,6 @@ public class SocialService {
             pf = null;
         }
 
-        // 事务内更新
         return transactionTemplate.execute(status -> {
             Social social = socialRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("Social not found"));
@@ -86,7 +80,6 @@ public class SocialService {
 
             boolean changeIcon = hasFile || hasExternal;
             if (changeIcon) {
-                // 删除旧图标（如果有）
                 if (social.getIconImageId() != null) {
                     imageService.delete(EmbeddedImage.OwnerType.SOCIAL, social.getId(), social.getIconImageId());
                     social.setIconImageId(null);

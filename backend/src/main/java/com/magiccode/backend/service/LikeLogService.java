@@ -25,30 +25,25 @@ public class LikeLogService {
     }
 
     public void addLikeOrDislike(Long postId, String identifier, boolean positive) {
-        // 检查文章是否存在
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post Not Found"));
 
-        // 检查是否已存在点赞/点踩记录
-        if (likeLogRepository.existsByPostIdAndIdentifier(postId, identifier)) {
-            // 如果允许切换点赞/点踩状态，可以先删除旧记录
-            LikeLog existingLog = likeLogRepository.findByPostIdAndIdentifier(postId, identifier);
-            if (existingLog.isPositive() != positive) {
-                // 如果现有记录的状态与请求不同，更新状态
-                existingLog.setPositive(positive);
-                likeLogRepository.save(existingLog);
-            } else {
-                throw new RuntimeException("You have already " + (positive ? "liked" : "disliked") + " this post");
-            }
-        } else {
-            // 新增点赞/点踩记录
+//        if (likeLogRepository.existsByPostIdAndIdentifier(postId, identifier)) {
+//            LikeLog existingLog = likeLogRepository.findByPostIdAndIdentifier(postId, identifier);
+//            if (existingLog.isPositive() != positive) {
+//                existingLog.setPositive(positive);
+//                likeLogRepository.save(existingLog);
+//            } else {
+//                throw new RuntimeException("You have already " + (positive ? "liked" : "disliked") + " this post");
+//            }
+//        } else {
             LikeLog likeLog = LikeLog.builder()
                     .post(post)
                     .identifier(identifier)
                     .positive(positive)
                     .build();
             likeLogRepository.save(likeLog);
-        }
+//        }
         updatePostCounts(postId);
     }
 

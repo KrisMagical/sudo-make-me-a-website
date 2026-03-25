@@ -126,7 +126,7 @@ onMounted(fetchCategories)
     </div>
 
     <!-- 创建分类表单 -->
-    <div class="border border-zinc-200 dark:border-zinc-800 p-4">
+    <div class="border border-zinc-200 dark:border-zinc-700 p-4">
       <h3 class="text-sm font-bold uppercase tracking-widest mb-4">New Category</h3>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
@@ -178,10 +178,10 @@ onMounted(fetchCategories)
     <!-- 分类列表 -->
     <div v-if="loading" class="italic opacity-50">Loading categories...</div>
 
-    <div v-else class="border border-zinc-200 dark:border-zinc-800">
+    <div v-else class="border border-zinc-200 dark:border-zinc-700">
       <table class="w-full text-left">
         <thead>
-          <tr class="border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-widest text-zinc-400">
+          <tr class="border-b border-zinc-200 dark:border-zinc-700 text-xs uppercase tracking-widest text-zinc-400">
             <th class="py-3 px-4 font-normal">Name</th>
             <th class="py-3 px-4 font-normal">Slug</th>
             <th class="py-3 px-4 font-normal text-right">Actions</th>
@@ -191,7 +191,7 @@ onMounted(fetchCategories)
           <tr
             v-for="category in categories"
             :key="category.id"
-            class="border-b border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+            class="border-b border-zinc-100 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
           >
             <td class="py-4 px-4 font-bold">{{ category.name }}</td>
             <td class="py-4 px-4 font-mono text-sm text-zinc-500">{{ category.slug }}</td>

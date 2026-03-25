@@ -25,7 +25,7 @@ const logout = () => {
 
 <template>
   <div class="min-h-screen">
-    <header class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-950 sticky top-0 z-50">
+    <header class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-zinc-950 sticky top-0 z-50">
       <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div class="flex items-center space-x-8">
           <span class="font-bold tracking-tighter text-lg">BLOG_ADMIN</span>

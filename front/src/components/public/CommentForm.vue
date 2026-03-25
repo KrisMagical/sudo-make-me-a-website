@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { publicApi } from '@/api/public'
 import type { CreateCommentRequest } from '@/types/api'
 
 const props = defineProps<{
-  postId: number
+  postId: number;
+  parentId?: number;
 }>()
 
-const emit = defineEmits(['success'])
+const emit = defineEmits(['success', 'cancel'])
 
 const form = ref<CreateCommentRequest>({
   name: '',
   email: '',
-  content: ''
+  content: '',
+  parentId: props.parentId
+})
+
+watch(() => props.parentId, (newVal) => {
+  form.value.parentId = newVal
 })
 
 const loading = ref(false)
@@ -20,6 +26,7 @@ const error = ref('')
 const success = ref(false)
 
 const submit = async () => {
+  // 基础验证
   if (!form.value.name || !form.value.email || !form.value.content) {
     error.value = 'All fields are required'
     return
@@ -34,9 +41,19 @@ const submit = async () => {
   error.value = ''
 
   try {
+    // 提交时 form.value 中已包含正确的 parentId
     await publicApi.addComment(props.postId, form.value)
+
     success.value = true
-    form.value = { name: '', email: '', content: '' }
+
+    // 重置表单内容
+    form.value = {
+      name: '',
+      email: '',
+      content: '',
+      parentId: undefined // 关键：重置 parentId 以退出回复模式
+    }
+
     emit('success')
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Failed to submit comment'
@@ -44,11 +61,19 @@ const submit = async () => {
     loading.value = false
   }
 }
+
+const cancelReply = () => {
+  form.value.parentId = undefined
+  emit('cancel')
+}
 </script>
 
 <template>
   <div class="border border-zinc-200 dark:border-zinc-800 p-6">
-    <h3 class="text-sm font-bold uppercase tracking-widest mb-4">Post Comment</h3>
+    <!-- 动态标题 -->
+    <h3 class="text-sm font-bold uppercase tracking-widest mb-4">
+      {{ props.parentId ? 'Reply to Comment' : 'Post Comment' }}
+    </h3>
 
     <div v-if="success" class="mb-4 p-3 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm">
       Comment submitted successfully. It will appear after moderation.
@@ -94,7 +119,18 @@ const submit = async () => {
         ></textarea>
       </div>
 
-      <div class="flex justify-end">
+      <div class="flex justify-end items-center gap-3">
+        <!-- 取消回复按钮：仅在回复模式下显示 -->
+        <button
+          v-if="props.parentId"
+          type="button"
+          @click="cancelReply"
+          class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+          :disabled="loading"
+        >
+          Cancel
+        </button>
+
         <button
           type="submit"
           :disabled="loading"
@@ -105,7 +141,7 @@ const submit = async () => {
           @mouseenter="$event.target.style.backgroundColor = '#27272a'"
           @mouseleave="$event.target.style.backgroundColor = '#18181b'"
         >
-          {{ loading ? 'Submitting...' : 'Submit Comment' }}
+          {{ loading ? 'Submitting...' : (props.parentId ? 'Submit Reply' : 'Submit Comment') }}
         </button>
       </div>
     </form>

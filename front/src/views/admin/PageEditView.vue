@@ -16,7 +16,11 @@ const page = ref<PageDto | null>(null)
 const allPages = ref<PageDto[]>([])
 const loading = ref(false)
 const saving = ref(false)
+
+// 用于右侧插入链接的搜索
 const searchTerm = ref('')
+// 新增：父页面选择器的搜索关键词
+const parentSearch = ref('')
 
 const editorRef = ref<InstanceType<typeof Editor>>()
 const mediaLibraryRef = ref<InstanceType<typeof MediaLibrary> | null>(null)
@@ -32,14 +36,73 @@ const currentDbSlug = computed(() => isEditing.value ? (route.params.slug as str
 
 const indentedPages = computed(() => buildIndentedList(allPages.value, page.value?.id))
 
+// --- 新增辅助函数：收集指定页面的所有祖先 ID ---
+const collectAncestors = (pageId: number, pagesList: PageDto[]): Set<number> => {
+  const ancestors = new Set<number>()
+  let current = pagesList.find(p => p.id === pageId)
+
+  // 向上遍历直到根节点
+  while (current && current.parentId) {
+    ancestors.add(current.parentId)
+    current = pagesList.find(p => p.id === current.parentId)
+  }
+  return ancestors
+}
+
+// --- 优化：过滤后的父页面选项 (支持搜索时展示完整树形结构) ---
+const filteredParentOptions = computed(() => {
+  const kw = parentSearch.value.trim()
+
+  // 情况 1: 无搜索词
+  if (!kw) {
+    // 若当前页面已有父级，必须把该父级返回，保证 <select> 能显示已选中的名称
+    if (page.value?.parentId) {
+      return indentedPages.value.filter(item => item.id === page.value!.parentId)
+    }
+    // 没搜索且没父级时，不列出任何多余页面，保持界面整洁
+    return []
+  }
+
+  // 情况 2: 有搜索词
+  const lowerKw = kw.toLowerCase()
+  const matchedIds = new Set<number>()
+
+  // 1. 找出所有直接匹配的页面 (标题或 slug 包含关键词)
+  for (const p of allPages.value) {
+    if (
+      p.id !== page.value?.id && // 排除当前页面自身
+      (p.title?.toLowerCase().includes(lowerKw) || p.slug?.toLowerCase().includes(lowerKw))
+    ) {
+      matchedIds.add(p.id)
+    }
+  }
+
+  if (matchedIds.size === 0) return []
+
+  // 2. 收集所有匹配页面的祖先 ID，以确保树形结构完整
+  const ancestorIds = new Set<number>()
+  for (const id of matchedIds) {
+    const ancestors = collectAncestors(id, allPages.value)
+    ancestors.forEach(a => ancestorIds.add(a))
+  }
+
+  // 3. 需要展示的所有 ID = 匹配项 + 祖先项
+  const visibleIds = new Set([...matchedIds, ...ancestorIds])
+
+  // 4. 从已排序的 indentedPages 中过滤，保持原有的树形缩进顺序
+  return indentedPages.value.filter(item => visibleIds.has(item.id))
+})
+
+// 优化：侧边栏插入子页面列表
+// 逻辑：强制要求输入搜索词才显示结果
 const availablePagesToLink = computed(() => {
-  if (!allPages.value) return []
+  if (!allPages.value || !searchTerm.value.trim()) return []
+
+  const kw = searchTerm.value.trim().toLowerCase()
   return allPages.value.filter(p =>
     p.id !== page.value?.id &&
     p.slug !== DRAFT_SLUG && // 隐藏草稿页
-    (searchTerm.value === '' ||
-      p.title.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
-      p.slug.includes(searchTerm.value))
+    (p.title.toLowerCase().includes(kw) || p.slug.toLowerCase().includes(kw))
   )
 })
 
@@ -238,16 +301,32 @@ onMounted(fetchData)
           />
         </div>
 
-        <div>
+        <!-- Parent Page Selection with Search -->
+        <div class="space-y-2">
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Parent Page</label>
+
+          <!-- 搜索输入框 -->
+          <input
+            v-model="parentSearch"
+            type="text"
+            placeholder="Search parent page..."
+            class="w-full mb-2 px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 bg-transparent focus:outline-none focus:border-zinc-500 transition-colors"
+          />
+
           <select
             v-model="page.parentId"
             @change="handleParentChange"
             class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none appearance-none"
           >
             <option :value="null">-- ROOT PAGE --</option>
+
+            <!-- 占位提示：无搜索且无父级时显示 -->
+            <option v-if="!parentSearch && !page.parentId" disabled value="">
+              [ Type to search parent page ]
+            </option>
+
             <option
-              v-for="item in indentedPages"
+              v-for="item in filteredParentOptions"
               :key="item.id"
               :value="item.id"
             >
@@ -297,16 +376,19 @@ onMounted(fetchData)
           </div>
         </div>
 
+        <!-- Insert Sub-Page Panel -->
         <div class="border border-zinc-200 dark:border-zinc-800 p-4">
           <h4 class="text-xs font-bold uppercase tracking-widest mb-2 text-zinc-500">Insert Sub-Page</h4>
           <p class="text-xs text-zinc-400 mb-4">
             Click a page to insert it into content. It will automatically become a <strong>child page</strong> upon save.
           </p>
+
           <input
             v-model="searchTerm"
             placeholder="Search pages..."
             class="w-full mb-3 px-2 py-1 text-sm border border-zinc-300 dark:border-zinc-700 bg-transparent"
           />
+
           <div class="max-h-60 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
             <button
               v-for="p in availablePagesToLink"
@@ -317,7 +399,12 @@ onMounted(fetchData)
               <span class="truncate">{{ p.title }}</span>
               <span class="opacity-0 group-hover:opacity-100 text-[10px] uppercase border border-zinc-400 px-1 rounded">Insert</span>
             </button>
-            <div v-if="availablePagesToLink.length === 0" class="text-xs text-zinc-400 text-center py-2">
+
+            <!-- 状态提示 -->
+            <div v-if="!searchTerm" class="text-xs text-zinc-400 text-center py-2">
+              Type to search pages...
+            </div>
+            <div v-else-if="availablePagesToLink.length === 0" class="text-xs text-zinc-400 text-center py-2">
               No pages found.
             </div>
           </div>
