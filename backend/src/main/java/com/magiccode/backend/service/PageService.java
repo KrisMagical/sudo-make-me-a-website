@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,6 +37,7 @@ public class PageService {
     private static final Pattern WIKI_LINK = Pattern.compile("\\[\\[\\s*([a-zA-Z0-9-_./]+)\\s*]]");
     private static final Pattern PAGES_PATH = Pattern.compile("/pages/([a-zA-Z0-9-_./]+)");
     private static final String RESERVED_HOME = "home";
+    private static final String DRAFT_SLUG = "00100000";
 
     public PageDto getPageBySlug(String slug) {
         Page page = pageRepository.findBySlug(slug);
@@ -88,6 +90,9 @@ public class PageService {
         Page page = pageRepository.findBySlug(slug);
         if (page == null) throw new RuntimeException("Page Not Found.");
 
+        boolean isDraft = slug.equals(DRAFT_SLUG);
+        boolean becomingReal = dto.getSlug() != null && !dto.getSlug().equals(DRAFT_SLUG);
+
         if (dto.getSlug() != null && !dto.getSlug().isBlank()) {
             String newSlug = dto.getSlug().trim();
             if (!newSlug.equals(page.getSlug()) && pageRepository.existsBySlug(newSlug)) {
@@ -113,6 +118,10 @@ public class PageService {
 
         if (dto.getOrderIndex() != null) {
             page.setOrderIndex(dto.getOrderIndex());
+        }
+
+        if (isDraft && becomingReal) {
+            page.setCreatedAt(LocalDateTime.now());
         }
 
         pageRepository.save(page);
@@ -273,7 +282,7 @@ public class PageService {
     }
 
     public List<PageSummaryDto> getRecentPages(int limit) {
-        return pageRepository.findByOrderByCreatedAtDesc(PageRequest.of(0, limit))
+        return pageRepository.findBySlugNotOrderByCreatedAtDesc(DRAFT_SLUG, PageRequest.of(0, limit))
                 .stream()
                 .map(page -> {
                     PageSummaryDto summary = pageMapper.toSummaryDto(page);

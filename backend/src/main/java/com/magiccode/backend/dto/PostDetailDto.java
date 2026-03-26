@@ -18,7 +18,7 @@ public class PostDetailDto {
     private String content;
     private String slug;
     private LocalDateTime createdAt;
-    private LocalDateTime updateAt;
+    private LocalDateTime updatedAt;
     private Integer likeCount;
     private Integer dislikeCount;
     private Integer viewCount;

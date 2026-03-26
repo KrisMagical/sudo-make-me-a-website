@@ -17,7 +17,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     Post findBySlug(String slug);
 
-    List<Post> findByOrderByCreatedAtDesc(Pageable pageable);
+//    List<Post> findByOrderByCreatedAtDesc(Pageable pageable);
 
     @Query("SELECT p FROM Post p WHERE p.published = true AND " +
             "(p.title LIKE %:keyword% OR p.content LIKE %:keyword%) " +
@@ -28,4 +28,5 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     List<Post> searchByKeyword(@Param("keyword") String keyword, Pageable pageable);
 
     Page<Post> findByCategory(Category category, Pageable pageable);
+    List<Post> findBySlugNotOrderByCreatedAtDesc(String slug, Pageable pageable);
 }

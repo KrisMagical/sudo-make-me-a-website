@@ -32,7 +32,9 @@ public interface PageRepository extends JpaRepository<Page, Long> {
             nativeQuery = true)
     List<Page> searchByKeyword(@Param("keyword") String keyword);
 
-    List<Page> findByOrderByCreatedAtDesc(Pageable pageable);
+//    List<Page> findByOrderByCreatedAtDesc(Pageable pageable);
 
     boolean existsByParent_Id(Long parentId);
+
+    List<Page> findBySlugNotOrderByCreatedAtDesc(String slug, Pageable pageable);
 }

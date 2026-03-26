@@ -20,6 +20,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
@@ -37,6 +38,7 @@ public class PostService {
     private final VideoMapper videoMapper;
     private final ImageService imageService;
     private final CommentRepository commentRepository;
+    private static final String DRAFT_SLUG = "00100000";
 
     public Page<PostSummaryDto> getPostByCategorySlug(String slug, Pageable pageable) {
         Category category = categoryRepository.findBySlug(slug);
@@ -92,6 +94,10 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Post Not Found"));
 
+
+        boolean isDraft = post.getSlug().equals(DRAFT_SLUG);
+        boolean becomingReal = updatePostDetailDto.getSlug() != null && !updatePostDetailDto.getSlug().equals(DRAFT_SLUG);
+
         if (categorySlug != null && !categorySlug.isBlank()) {
             Category category = categoryRepository.findBySlug(categorySlug);
             if (category == null) {
@@ -114,6 +120,11 @@ public class PostService {
         if (updatePostDetailDto.getContent() != null) {
             post.setContent(updatePostDetailDto.getContent());
         }
+
+        if (isDraft && becomingReal) {
+            post.setCreatedAt(LocalDateTime.now());
+        }
+
         postRepository.save(post);
         videoService.syncFromContent(EmbeddedVideo.OwnerType.POST, post.getId(), post.getContent());
         PostDetailDto dto = postDetailMapper.toPostDetailDto(post);
@@ -140,7 +151,7 @@ public class PostService {
     }
 
     public List<PostSummaryDto> getRecentPosts(int limit) {
-        return postRepository.findByOrderByCreatedAtDesc(PageRequest.of(0, limit))
+        return postRepository.findBySlugNotOrderByCreatedAtDesc(DRAFT_SLUG, PageRequest.of(0, limit))
                 .stream()
                 .map(postSummaryMapper::toPostSummaryDto)
                 .toList();
