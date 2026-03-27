@@ -41,7 +41,20 @@ fi
 chmod +x backend/mvnw
 
 # -------------------------------------------------------------------
-# 3. 启动后端 (Spring Boot)
+# 3. 加载 OSS 环境变量 (新增)
+# -------------------------------------------------------------------
+OSS_ENV_FILE=".env.oss"
+
+if [ -f "$OSS_ENV_FILE" ]; then
+    echo -e "${BLUE}Loading OSS environment variables...${NC}"
+    source "$OSS_ENV_FILE"
+else
+    echo -e "${RED}✘ Missing $OSS_ENV_FILE. Please run ./configure.sh first.${NC}"
+    exit 1
+fi
+
+# -------------------------------------------------------------------
+# 4. 启动后端 (Spring Boot)
 # -------------------------------------------------------------------
 echo -e "${BLUE}...Starting Backend Service (Java API)...${NC}"
 
@@ -74,7 +87,7 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 4. 前端状态确认 (Apache Mode)
+# 5. 前端状态确认 (Apache Mode)
 # -------------------------------------------------------------------
 echo -e "\n${BLUE}...Frontend Status...${NC}"
 if [ -d "front/dist" ]; then
@@ -86,7 +99,7 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 5. 完成提示
+# 6. 完成提示
 # -------------------------------------------------------------------
 echo -e "\n${CYAN}==============================================${NC}"
 echo -e "  Backend PID:  ${YELLOW}$BACKEND_PID${NC} (Log: backend.log)"
