@@ -53,7 +53,7 @@ echo -e "${BLUE}>> Configuration Mode Initiated (Run as root)${NC}\n"
 # ============================================================
 # 1. 数据库配置
 # ============================================================
-echo -e "${YELLOW}[1/7] Database Configuration...${NC}"
+echo -e "${YELLOW}[1/8] Database Configuration...${NC}"
 
 DEFAULT_DB_NAME="local_database"
 DEFAULT_DB_USER="root"
@@ -196,7 +196,7 @@ echo -e "${GREEN}✔ Database configuration updated.${NC}"
 # ============================================================
 # 2. 数据初始化
 # ============================================================
-echo -e "\n${YELLOW}[2/7] Handling Initial Data...${NC}"
+echo -e "\n${YELLOW}[2/8] Handling Initial Data...${NC}"
 if [ -f "$DATA_SQL_SOURCE" ]; then
     # 先复制文件到目标位置，后续在第4步修改目标文件
     cp "$DATA_SQL_SOURCE" "$DATA_SQL_DEST"
@@ -208,7 +208,7 @@ fi
 # ============================================================
 # 3. 前端配置
 # ============================================================
-echo -e "\n${YELLOW}[3/7] Frontend Setup...${NC}"
+echo -e "\n${YELLOW}[3/8] Frontend Setup...${NC}"
 
 if [ ! -f "$FRONT_ENV" ]; then
     if [ -f "$FRONT_ENV_EXAMPLE" ]; then
@@ -245,7 +245,7 @@ echo -e "${GREEN}✔ Frontend configured.${NC}"
 # ============================================================
 # 4. 修改默认用户凭证
 # ============================================================
-echo -e "\n${YELLOW}[4/7] Default User Credentials Configuration...${NC}"
+echo -e "\n${YELLOW}[4/8] Default User Credentials Configuration...${NC}"
 echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
 
 if [ ! -f "$DATA_SQL_DEST" ]; then
@@ -325,7 +325,7 @@ fi
 # ============================================================
 # 5. 安装依赖
 # ============================================================
-echo -e "\n${YELLOW}[5/7] Installing dependencies as root...${NC}"
+echo -e "\n${YELLOW}[5/8] Installing dependencies as root...${NC}"
 
 # 前端依赖与构建
 echo -e "${YELLOW}...Installing frontend dependencies & Building...${NC}"
@@ -356,7 +356,7 @@ cd ..
 # ============================================================
 # 6. 权限
 # ============================================================
-echo -e "\n${YELLOW}[6/7] FINAL STEP: Adjusting all permissions for www-data...${NC}"
+echo -e "\n${YELLOW}[6/8] FINAL STEP: Adjusting all permissions for www-data...${NC}"
 
 if id "www-data" &>/dev/null; then
     chown -R www-data:www-data .
@@ -373,9 +373,9 @@ else
 fi
 
 # ============================================================
-# 7. 生成 Apache 虚拟主机配置（动态端口 + 自定义域名）
+# 7. 生成 Apache 虚拟主机配置（支持 HTTPS 和 HTTP 重定向）
 # ============================================================
-echo -e "\n${YELLOW}[7/7] Generating Apache virtual host configuration...${NC}"
+echo -e "\n${YELLOW}[7/8] Generating Apache virtual host configuration (with HTTPS support)...${NC}"
 
 # 获取用户域名
 echo -e "\n${YELLOW}Please enter your domain name (e.g., example.com) for Apache configuration.${NC}"
@@ -384,6 +384,11 @@ read -p "Domain name [magiccodelab.com]: " DOMAIN
 DOMAIN=${DOMAIN:-magiccodelab.com}
 echo -e "${GREEN}✔ Using domain: $DOMAIN${NC}"
 
+# 询问是否启用 SSL
+read -p "Enable HTTPS (SSL)? (y/n): " ENABLE_SSL
+ENABLE_SSL=${ENABLE_SSL:-y}
+
+# 检测后端可用端口
 find_available_port() {
     local start_port=8080
     local max_attempts=100
@@ -410,9 +415,96 @@ echo -e "${GREEN}✔ .backend-port file created with port $BACKEND_PORT.${NC}"
 # Apache 站点配置文件路径（基于域名）
 APACHE_SITE_AVAILABLE="/etc/apache2/sites-available/$DOMAIN.conf"
 
-# 生成配置内容
-cat > "$APACHE_SITE_AVAILABLE" <<EOF
-<VirtualHost *:80>
+# 构建配置内容
+CONFIG_CONTENT=""
+
+# 如果启用 SSL，先添加 HTTPS 虚拟主机
+if [[ "$ENABLE_SSL" == "y" || "$ENABLE_SSL" == "Y" ]]; then
+    # 默认证书路径（基于域名）
+    SSL_CERT_FILE="/etc/ssl/certs/${DOMAIN}_public.crt"
+    SSL_CHAIN_FILE="/etc/ssl/certs/${DOMAIN}_chain.crt"
+    SSL_KEY_FILE="/etc/ssl/private/${DOMAIN}.key"
+    
+    # 检查证书文件是否存在，如果不存在则提示用户输入路径
+    if [[ ! -f "$SSL_CERT_FILE" || ! -f "$SSL_CHAIN_FILE" || ! -f "$SSL_KEY_FILE" ]]; then
+        echo -e "${YELLOW}Default SSL certificate files not found at:${NC}"
+        echo -e "  $SSL_CERT_FILE"
+        echo -e "  $SSL_CHAIN_FILE"
+        echo -e "  $SSL_KEY_FILE"
+        echo -e "${YELLOW}Please provide the correct paths for SSL certificates.${NC}"
+        read -p "Path to certificate file (public.crt): " SSL_CERT_FILE
+        read -p "Path to chain file (chain.crt): " SSL_CHAIN_FILE
+        read -p "Path to private key file (.key): " SSL_KEY_FILE
+    fi
+    
+    # 最终验证证书文件是否存在
+    if [[ ! -f "$SSL_CERT_FILE" || ! -f "$SSL_CHAIN_FILE" || ! -f "$SSL_KEY_FILE" ]]; then
+        echo -e "${RED}✘ One or more SSL certificate files are missing. SSL configuration aborted.${NC}"
+        echo -e "  Please ensure all three files exist and run the script again, or choose not to enable SSL."
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✔ SSL certificate files found.${NC}"
+    
+    # 启用 SSL 模块
+    a2enmod ssl >/dev/null 2>&1
+    echo -e "${GREEN}✔ Apache SSL module enabled.${NC}"
+    
+    # 添加 HTTPS 虚拟主机配置
+    CONFIG_CONTENT+="<VirtualHost *:443>
+    ServerName $DOMAIN
+    ServerAdmin webmaster@$DOMAIN
+
+    DocumentRoot /var/www/sudo-make-me-a-website/front/dist
+
+    SSLEngine on
+    SSLCertificateFile $SSL_CERT_FILE
+    SSLCertificateChainFile $SSL_CHAIN_FILE
+    SSLCertificateKeyFile $SSL_KEY_FILE
+
+    <Directory /var/www/sudo-make-me-a-website/front/dist>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
+    </Directory>
+
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyTimeout 300
+
+    ProxyPass /login http://localhost:$BACKEND_PORT/login
+    ProxyPassReverse /login http://localhost:$BACKEND_PORT/login
+
+    ProxyPass /api http://localhost:$BACKEND_PORT/api
+    ProxyPassReverse /api http://localhost:$BACKEND_PORT/api
+
+    ProxyPass /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
+    ProxyPassReverse /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
+
+    ProxyPass /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
+    ProxyPassReverse /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
+
+    ErrorLog \${APACHE_LOG_DIR}/${DOMAIN}_ssl_error.log
+    CustomLog \${APACHE_LOG_DIR}/${DOMAIN}_ssl_access.log combined
+
+</VirtualHost>
+
+"
+    # 添加 HTTP 重定向虚拟主机
+    CONFIG_CONTENT+="<VirtualHost *:80>
+    ServerName $DOMAIN
+    Redirect permanent / https://$DOMAIN/
+</VirtualHost>"
+else
+    # 仅 HTTP 配置
+    CONFIG_CONTENT="<VirtualHost *:80>
     ServerName $DOMAIN
     ServerAdmin webmaster@$DOMAIN
 
@@ -447,15 +539,18 @@ cat > "$APACHE_SITE_AVAILABLE" <<EOF
 
     ProxyPass /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
     ProxyPassReverse /v3/api-docs http://localhost:$BACKEND_PORT/v3/api-docs
+
     ProxyPass /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
     ProxyPassReverse /swagger-ui http://localhost:$BACKEND_PORT/swagger-ui
 
     # 错误日志和访问日志（使用域名区分）
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN}_error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN}_access.log combined
-</VirtualHost>
-EOF
+</VirtualHost>"
+fi
 
+# 写入配置文件
+echo "$CONFIG_CONTENT" > "$APACHE_SITE_AVAILABLE"
 echo -e "${GREEN}✔ Apache configuration generated at $APACHE_SITE_AVAILABLE${NC}"
 
 # 启用站点并重新加载 Apache
@@ -466,6 +561,40 @@ systemctl reload apache2
 echo -e "${GREEN}✔ Apache site enabled and reloaded.${NC}"
 
 # ============================================================
+# 8. OSS 配置
+# ============================================================
+echo -e "\n${YELLOW}[8/8] Aliyun OSS Configuration...${NC}"
+
+OSS_ENV_FILE=".env.oss"
+
+echo -e "\n${BLUE}>> Aliyun OSS Configuration${NC}"
+
+# 如果文件已存在，可以选择跳过
+if [ -f "$OSS_ENV_FILE" ]; then
+    read -p "OSS configuration already exists. Overwrite? (y/n): " overwrite
+fi
+
+if [[ "$overwrite" == "y" || ! -f "$OSS_ENV_FILE" ]]; then
+    read -p "Enter OSS AccessKey ID: " input_key_id
+    read -p "Enter OSS AccessKey Secret: " input_key_secret
+    read -p "Enter OSS Bucket Name [krismagic-images]: " input_bucket
+    input_bucket=${input_bucket:-krismagic-images}
+    
+    # 写入本地环境变量文件
+    cat <<EOF > "$OSS_ENV_FILE"
+export OSS_ACCESS_KEY_ID='$input_key_id'
+export OSS_ACCESS_KEY_SECRET='$input_key_secret'
+export OSS_BUCKET_NAME='$input_bucket'
+export OSS_ENDPOINT='oss-cn-guangzhou.aliyuncs.com'
+export OSS_CDN_DOMAIN='cdn.magiccodelab.com'
+EOF
+    chmod 600 "$OSS_ENV_FILE" # 限制权限，仅当前用户可读
+    echo -e "${GREEN}✔ OSS credentials saved to $OSS_ENV_FILE${NC}"
+else
+    echo -e "${CYAN}ℹ Using existing OSS configuration.${NC}"
+fi
+
+# ============================================================
 # 完成
 # ============================================================
 echo -e "\n${BLUE}==============================================${NC}"
@@ -474,3 +603,6 @@ echo -e "${BLUE}==============================================${NC}"
 echo -e "Now start services as www-data:"
 echo -e "  ${YELLOW}sudo -u www-data ./start.sh${NC}"
 echo -e "\nYour site should be accessible at: http://$DOMAIN"
+if [[ "$ENABLE_SSL" == "y" || "$ENABLE_SSL" == "Y" ]]; then
+    echo -e "  Also at: https://$DOMAIN (SSL enabled)"
+fi
