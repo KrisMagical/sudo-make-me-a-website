@@ -12,29 +12,28 @@ export const sidebarApi = {
   updateSiteConfig: (data: SiteConfigDto) =>
     request.put<SiteConfigDto>('/api/sidebar/site-config', data),
 
-  // 获取浏览器图标
   getBrowserIcon: async (): Promise<BrowserIconDto> => {
-      try {
-        const response = await request.get<BrowserIconDto>('/api/sidebar/browser-icon')
-        if (response.faviconUrl && !response.faviconUrl.startsWith('http')) {
-          response.faviconUrl = window.location.origin + response.faviconUrl
-        }
-        if (response.appleTouchIconUrl && !response.appleTouchIconUrl.startsWith('http')) {
-          response.appleTouchIconUrl = window.location.origin + response.appleTouchIconUrl
-        }
-        return response
-      } catch (error) {
-        console.error('Failed to fetch browser icon:', error)
-        return {
-          id: 0,
-          faviconImageId: null,
-          faviconUrl: '/favicon.ico',
-          appleTouchIconImageId: null,
-          appleTouchIconUrl: '/apple-touch-icon.png',
-          isActive: true
-        }
+    try {
+      const response = await request.get<BrowserIconDto>('/api/sidebar/browser-icon')
+      if (response.faviconUrl && !response.faviconUrl.startsWith('http')) {
+        response.faviconUrl = window.location.origin + response.faviconUrl
       }
-    },
+      if (response.appleTouchIconUrl && !response.appleTouchIconUrl.startsWith('http')) {
+        response.appleTouchIconUrl = window.location.origin + response.appleTouchIconUrl
+      }
+      return response
+    } catch (error) {
+      console.error('Failed to fetch browser icon:', error)
+      return {
+        id: 0,
+        faviconImageId: null,
+        faviconUrl: '',
+        appleTouchIconImageId: null,
+        appleTouchIconUrl: '',
+        isActive: true
+      }
+    }
+  },
 
   // 更新浏览器图标
   updateBrowserIcon: (data: BrowserIconDto) =>

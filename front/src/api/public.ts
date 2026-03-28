@@ -14,8 +14,8 @@ export const publicApi = {
   getRecentPosts: (limit = 6) => request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
   getRecentPages: (limit = 6) => request.get<PageSummaryDto[]>('/api/pages/recent', { params: { limit } }),
   getPostsByCategory: (slug: string, page = 0, size = 10) => request.get<PageResponse<PostSummaryDto>>(`/api/posts/category/${slug}`, {params: { page, size }}),
-  searchPosts: (q: string) => request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q } }),
-  searchPages: (q: string) => request.get<PageSummaryDto[]>('/api/pages/searchPages', { params: { q } }),
+  searchPosts: (q: string, options?: { signal?: AbortSignal }) => request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q }, ...options }),
+  searchPages: (q: string, options?: { signal?: AbortSignal }) => request.get<PostSummaryDto[]>('/api/pages/searchPages', { params: { q }, ...options }),
 
   // 交互功能
   likePost: (postId: number, positive: boolean) =>

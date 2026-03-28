@@ -1,69 +1,72 @@
 <!-- src/components/public/SearchModal.vue -->
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onUnmounted } from 'vue'
 import { publicApi } from '@/api/public'
 import type { PostSummaryDto, PageSummaryDto } from '@/types/api'
 
-// 定义 emits
-const emit = defineEmits<{
-  (e: 'close'): void
-}>()
+const emit = defineEmits<{ (e: 'close'): void }>()
 
-// 搜索状态
 const keyword = ref('')
 const loading = ref(false)
 const posts = ref<PostSummaryDto[]>([])
 const pages = ref<PageSummaryDto[]>([])
 const error = ref<string | null>(null)
 
-// 清理摘要中的Markdown图片语法和URL
+let abortController: AbortController | null = null
+let debounceTimer: number
+
 const cleanExcerpt = (excerpt: string) => {
   if (!excerpt) return ''
-  // 移除 markdown 图片语法
   let cleaned = excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
-  // 移除所有 URL (http/https 链接)
   cleaned = cleaned.replace(/https?:\/\/[^\s<>\[\]()"]+/g, '')
-  // 清理多余的空白
-  cleaned = cleaned.replace(/\s+/g, ' ').trim()
-  return cleaned
+  return cleaned.replace(/\s+/g, ' ').trim()
 }
 
-// 防抖处理
-let debounceTimer: number
-watch(keyword, (newVal) => {
-  clearTimeout(debounceTimer)
-  if (newVal.trim().length < 2) {
-    posts.value = []
-    pages.value = []
-    return
-  }
-  debounceTimer = setTimeout(() => performSearch(newVal), 300)
-})
-
-// 执行搜索
 const performSearch = async (q: string) => {
+  if (abortController) abortController.abort()
+  abortController = new AbortController()
+  const signal = abortController.signal
+
   loading.value = true
   error.value = null
   try {
     const [postResults, pageResults] = await Promise.all([
-      publicApi.searchPosts(q),
-      publicApi.searchPages(q)
+      publicApi.searchPosts(q, { signal }),
+      publicApi.searchPages(q, { signal })
     ])
-    posts.value = postResults
-    pages.value = pageResults
-  } catch (err) {
-    error.value = 'Search failed, please try again later.'
-    console.error(err)
+    if (keyword.value.trim() === q.trim()) {
+      posts.value = postResults
+      pages.value = pageResults
+    }
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      error.value = 'Search failed, please try again later.'
+      console.error(err)
+    }
   } finally {
     loading.value = false
   }
 }
 
-// 合并结果（用于计数）
+watch(keyword, (newVal) => {
+  clearTimeout(debounceTimer)
+  const q = newVal.trim()
+  if (q.length < 2) {
+    posts.value = []
+    pages.value = []
+    return
+  }
+  debounceTimer = setTimeout(() => performSearch(q), 300)
+})
+
 const totalCount = computed(() => posts.value.length + pages.value.length)
 
-// 关闭模态框
 const close = () => emit('close')
+
+onUnmounted(() => {
+  if (abortController) abortController.abort()
+  clearTimeout(debounceTimer)
+})
 </script>
 
 <template>

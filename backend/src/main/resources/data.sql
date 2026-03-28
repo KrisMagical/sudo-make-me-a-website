@@ -3,18 +3,8 @@ values (1, "gosling", "$2a$12$zBfG6tE.mgR28EON4eKQqeLJVwLn.aL5e213vvar8tA4fLcVFc
 insert ignore into categories (id,name,slug)
 values (1,'blog','blog'),(2,'my-shares','my-shares'),(3,'creations','creations');
 
---INSERT INTO site_configs (site_name, author_name, is_active)
---SELECT 'My Blog', 'KrisMagic', TRUE
---FROM DUAL
---WHERE NOT EXISTS (SELECT 1 FROM site_configs WHERE is_active = TRUE);
---
---INSERT INTO browser_icons (favicon_url, apple_touch_icon_url, is_active)
---SELECT '/favicon.ico', '/apple-touch-icon.png', TRUE
---FROM DUAL
---WHERE NOT EXISTS (SELECT 1 FROM browser_icons WHERE is_active = TRUE);
-
 INSERT IGNORE INTO embedded_images (
-    id, owner_type, owner_id, original_filename, content_type, size, data, created_at
+    id, owner_type, owner_id, original_filename, content_type, size, object_key, url, created_at
 ) VALUES (
     1,
     'FAVICON',
@@ -22,12 +12,13 @@ INSERT IGNORE INTO embedded_images (
     'favicon.png',
     'image/png',
     0,
-    0,
+    'favicon-default-key',
+    '/api/images/FAVICON/-1/1',
     NOW()
 );
 
 INSERT IGNORE INTO embedded_images (
-    id, owner_type, owner_id, original_filename, content_type, size, data, created_at
+    id, owner_type, owner_id, original_filename, content_type, size, object_key, url, created_at
 ) VALUES (
     2,
     'APPLE_TOUCH_ICON',
@@ -35,7 +26,8 @@ INSERT IGNORE INTO embedded_images (
     'apple-touch-icon.png',
     'image/png',
     0,
-    0,
+    'apple-touch-icon-default-key',
+    '/api/images/APPLE_TOUCH_ICON/-1/2',
     NOW()
 );
 

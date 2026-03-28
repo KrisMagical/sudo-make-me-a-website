@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, onUnmounted } from 'vue'
 import request from '@/utils/request'
 import type { ImageDto } from '@/types/api'
 
@@ -15,11 +15,15 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const images = ref<ImageDto[]>([])
+let abortController: AbortController | null = null
+let debounceTimer: number | null = null
 
 const fetchImages = async () => {
+  if (abortController) abortController.abort()
+  abortController = new AbortController()
+
   try {
     let url = ''
-
     if (props.ownerType === 'POST') {
       url = `/api/posts/${props.ownerId}/images`
     } else if (props.ownerType === 'PAGE') {
@@ -37,21 +41,29 @@ const fetchImages = async () => {
     }
 
     console.log('Fetching images from:', url)
-    images.value = await request.get(url)
+    const response = await request.get(url, {
+      signal: abortController.signal
+    })
+    images.value = response
   } catch (error: any) {
-    console.error('Failed to fetch images:', error)
-
-    if (error.response?.status === 401) {
-      console.warn('Authentication error when fetching images')
+    if (error.name === 'AbortError') {
+      console.log('Fetch aborted')
+      return
     }
+    console.error('Failed to fetch images:', error)
   }
+}
+
+const debouncedFetchImages = () => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = window.setTimeout(() => {
+    fetchImages()
+  }, 300)
 }
 
 const deleteImage = async (imageId: number) => {
   if (!confirm('Delete this image?')) return
-
   try {
-    // 删除图片的 API 使用 ID 而不是 slug
     await request.delete(`/api/images/${props.ownerType}/${props.ownerId}/${imageId}`)
     fetchImages()
   } catch (error: any) {
@@ -62,16 +74,20 @@ const deleteImage = async (imageId: number) => {
 
 watch(() => props.ownerSlug, (newSlug, oldSlug) => {
   if (newSlug !== oldSlug && props.ownerType === 'PAGE') {
-    fetchImages()
+    debouncedFetchImages()
   }
 })
 
-onMounted(fetchImages)
-
-defineExpose({
-  fetchImages
+onMounted(() => {
+  fetchImages()
 })
 
+onUnmounted(() => {
+  if (abortController) abortController.abort()
+  if (debounceTimer) clearTimeout(debounceTimer)
+})
+
+defineExpose({ fetchImages })
 </script>
 
 <template>

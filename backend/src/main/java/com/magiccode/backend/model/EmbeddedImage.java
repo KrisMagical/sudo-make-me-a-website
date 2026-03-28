@@ -44,10 +44,11 @@ public class EmbeddedImage {
     @Column(nullable = false)
     private Long size;
 
-    @Lob
-    @Basic(fetch = FetchType.LAZY)
-    @Column(nullable = false, columnDefinition = "LONGBLOB")
-    private byte[] data;
+    @Column(name = "object_key", nullable = false, length = 512)
+    private String objectKey;
+
+    @Column(nullable = false, length = 512)
+    private String url;
 
     @CreationTimestamp
     @Column(name = "created_at")

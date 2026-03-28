@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import request from '@/utils/request'
 import type { SidebarDto, PageTreeNodeDto, CategoryDto, SiteConfigDto } from '@/types/api'
@@ -8,16 +8,16 @@ import { useThemeStore } from '@/stores/themeStore'
 
 const route = useRoute()
 const isMobile = ref(false)
-const isSidebarOpen = ref(false) // 控制移动端（遮罩层平移）
+const isSidebarOpen = ref(false)
 const isPcCollapsed = ref(false)
 const pagesSectionExpanded = ref(false)
 const themeStore = useThemeStore()
 
-// 侧边栏数据
 const sidebarData = ref<SidebarDto | null>(null)
 const loading = ref(true)
 
-// 计算属性
+let abortController: AbortController | null = null
+
 const pages = computed(() => sidebarData.value?.pages || [])
 const categories = computed(() => sidebarData.value?.categories || [])
 const siteConfig = computed(() => sidebarData.value?.siteConfig || {
@@ -32,10 +32,8 @@ const siteConfig = computed(() => sidebarData.value?.siteConfig || {
   isActive: true
 })
 
-// 展开/收起的页面 ID
 const expandedPageIds = ref<Set<number>>(new Set())
 
-// 修复后的 isActive 函数
 const isActive = (item: { slug: string; type: 'page' | 'category' }) => {
   if (item.type === 'page') {
     return route.name === 'page' && route.params.slug === item.slug
@@ -44,16 +42,24 @@ const isActive = (item: { slug: string; type: 'page' | 'category' }) => {
   }
 }
 
-// 获取侧边栏完整数据
 const fetchSidebarData = async () => {
+  if (abortController) {
+    abortController.abort()
+  }
+
+  abortController = new AbortController()
+  const signal = abortController.signal
+
   loading.value = true
   try {
-    const response = await request.get('/api/sidebar')
+    const response = await request.get('/api/sidebar', { signal })
     sidebarData.value = response
     autoExpandCurrentPage()
-  } catch (error) {
-    console.error('Failed to fetch sidebar data:', error)
-    await fetchFallbackData()
+  } catch (error: any) {
+    if (error.name !== 'AbortError') {
+      console.error('Failed to fetch sidebar data:', error)
+      await fetchFallbackData()
+    }
   } finally {
     loading.value = false
   }
@@ -66,27 +72,19 @@ const fetchFallbackData = async () => {
       request.get('/api/categories').catch(() => []),
       request.get('/api/sidebar/site-config').catch(() => null)
     ])
-
     const pageTree = buildPageTree(pagesResponse)
-
     sidebarData.value = {
       siteConfig: siteConfigResponse || {
-        id: 0,
-        siteName: 'My Blog',
-        authorName: 'Author',
-        siteAvatarUrl: '',
-        footerText: '',
-        metaDescription: '',
-        metaKeywords: '',
-        copyrightText: '',
-        isActive: true
+        id: 0, siteName: 'My Blog', authorName: 'Author',
+        siteAvatarUrl: '', footerText: '', metaDescription: '',
+        metaKeywords: '', copyrightText: '', isActive: true
       },
       pages: pageTree,
       categories: categoriesResponse || [],
       browserIcon: {
         id: 0,
-        faviconUrl: '/favicon.ico',
-        appleTouchIconUrl: '/apple-touch-icon.png',
+        faviconUrl: '',
+        appleTouchIconUrl: '',
         isActive: true
       }
     }
@@ -95,10 +93,9 @@ const fetchFallbackData = async () => {
   }
 }
 
-// 构建页面树形结构
+
 const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
   if (!flatPages || flatPages.length === 0) return []
-
   const pageMap = new Map<number, any>()
   const rootPages: any[] = []
 
@@ -150,10 +147,8 @@ const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
   return sortTree(rootPages)
 }
 
-// 自动展开当前页面的父级页面
 const autoExpandCurrentPage = () => {
   if (route.name !== 'page') return
-
   const currentSlug = route.params.slug as string
   if (!currentSlug) return
 
@@ -178,7 +173,6 @@ const autoExpandCurrentPage = () => {
   })
 }
 
-// 切换页面展开状态
 const togglePage = (pageId: number, hasChildren: boolean) => {
   if (!hasChildren) return
   if (expandedPageIds.value.has(pageId)) {
@@ -188,21 +182,17 @@ const togglePage = (pageId: number, hasChildren: boolean) => {
   }
 }
 
-// 响应式处理
 const checkMobile = () => {
   isMobile.value = window.innerWidth < 768
-  // 可选：切换到移动端时自动展开 PC 折叠的侧边栏，避免状态混乱
   if (isMobile.value) {
     isPcCollapsed.value = false
   }
 }
 
-// 渲染页面树
 const renderPageTree = (pageList: PageTreeNodeDto[], depth = 0) => {
   return pageList.map(page => {
     const isExpanded = expandedPageIds.value.has(page.id)
     const hasChildren = page.children && page.children.length > 0
-
     return {
       id: page.id,
       slug: page.slug,
@@ -224,18 +214,22 @@ onMounted(() => {
   window.addEventListener('resize', checkMobile)
 })
 
-// 监听路由变化，更新高亮状态
+onUnmounted(() => {
+  if (abortController) {
+    abortController.abort()
+  }
+  window.removeEventListener('resize', checkMobile)
+})
+
 watch(() => route.fullPath, () => {
   expandedPageIds.value.clear()
   autoExpandCurrentPage()
 })
 
-// 移动端切换侧边栏
 const toggleSidebar = () => {
   isSidebarOpen.value = !isSidebarOpen.value
 }
 
-// 点击链接时在移动端关闭侧边栏
 const handleLinkClick = () => {
   if (isMobile.value) {
     isSidebarOpen.value = false

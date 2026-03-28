@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -22,19 +23,15 @@ public class ImageController {
     private final PageRepository pageRepository;
 
     @GetMapping("/images/{ownerType}/{ownerId}/{imageId}")
-    public ResponseEntity<byte[]> getEmbeddedImage(
+    public ResponseEntity<Void> getEmbeddedImage(
             @PathVariable EmbeddedImage.OwnerType ownerType,
             @PathVariable Long ownerId,
             @PathVariable Long imageId) {
 
         EmbeddedImage image = imageService.get(ownerType, ownerId, imageId);
-        MediaType mediaType = imageService.getMediaTypeOrOctet(image.getContentType());
-
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + image.getOriginalFilename().replace("\"", "") + "\"")
-                .body(image.getData());
+        return ResponseEntity.status(302)
+                .location(URI.create(image.getUrl()))
+                .build();
     }
 
     @PreAuthorize("hasRole('ROOT')")

@@ -1,16 +1,27 @@
 package com.magiccode.backend.service;
 
+import com.aliyun.oss.OSS;
+import com.aliyun.oss.model.DeleteObjectsRequest;
+import com.aliyun.oss.model.ObjectMetadata;
+import com.aliyun.oss.model.PutObjectRequest;
 import com.magiccode.backend.dto.ImageDto;
 import com.magiccode.backend.mapping.ImageMapper;
 import com.magiccode.backend.model.*;
 import com.magiccode.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -20,7 +31,6 @@ import java.util.UUID;
 public class ImageService {
     private final EmbeddedImageRepository embeddedImageRepository;
     private final ImageMapper imageMapper;
-
     private final PostRepository postRepository;
     private final PageRepository pageRepository;
     private final HomeProfileRepository homeProfileRepository;
@@ -28,150 +38,179 @@ public class ImageService {
     private final SiteConfigRepository siteConfigRepository;
     private final BrowserIconRepository browserIconRepository;
 
-    public static class ProcessedFile {
-        public final byte[] data;
-        public final String originalFilename;
-        public final String contentType;
-        public final long size;
+    private final TransactionTemplate transactionTemplate;
 
-        public ProcessedFile(byte[] data, String originalFilename, String contentType, long size) {
-            this.data = data;
-            this.originalFilename = originalFilename;
-            this.contentType = contentType;
-            this.size = size;
-        }
-    }
+    private final OSS ossClient;
 
-    public ProcessedFile processFile(MultipartFile file) {
+    @Value("${aliyun.oss.bucket-name}")
+    private String bucketName;
+    @Value("${aliyun.oss.cdn-domain}")
+    private String cdnDomain;
+
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
+    private UploadResult uploadToOSS(MultipartFile file, EmbeddedImage.OwnerType ownerType, Long ownerId) {
         if (file == null || file.isEmpty()) throw new RuntimeException("File is Empty");
-
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new RuntimeException("Unsupported image content-type");
         }
 
-        byte[] bytes;
-        try {
-            bytes = file.getBytes();
+        String originalFilename = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
+        String safeName = originalFilename.replaceAll("[^a-zA-Z0-9._-]", "_");
+        String dataPath = LocalDateTime.now().format(DATE_TIME_FORMATTER);
+        String uuid = UUID.randomUUID().toString().replace("-", "");
+        String extension = getFileExtension(originalFilename);
+
+        String objectKey = String.format("%s/%d/%s/%s_%s%s",
+                ownerType.name().toLowerCase(),
+                ownerId,
+                dataPath,
+                uuid,
+                safeName,
+                extension != null ? "." + extension : "");
+
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentType(contentType);
+        metadata.setContentLength(file.getSize());
+
+        try (InputStream inputStream = file.getInputStream()) {
+            PutObjectRequest putRequest = new PutObjectRequest(bucketName, objectKey, inputStream, metadata);
+            ossClient.putObject(putRequest);
         } catch (IOException e) {
-            throw new RuntimeException("Read file failed", e);
+            throw new RuntimeException("Upload to OSS failed", e);
         }
 
-        String safeName = generateSafeFilename(file, contentType);
-        return new ProcessedFile(bytes, safeName, contentType, file.getSize());
+        String normalizedCdn = normalizeCdnUrl(cdnDomain);
+        String url = normalizedCdn.endsWith("/") ? normalizedCdn + objectKey : normalizedCdn + "/" + objectKey;
+        return new UploadResult(objectKey, url);
     }
 
-    @Transactional
+    private void deleteFromOSS(String objectKey) {
+        if (objectKey == null || objectKey.trim().isEmpty()) {
+            return;
+        }
+        ossClient.deleteObject(bucketName, objectKey);
+    }
+
     public EmbeddedImage saveImage(EmbeddedImage.OwnerType ownerType, Long ownerId,
-                                   byte[] data, String originalFilename, String contentType, long size) {
+                                   String originalFilename, String contentType, long size,
+                                   String objectKey, String url) {
         EmbeddedImage image = EmbeddedImage.builder()
                 .ownerType(ownerType)
                 .ownerId(ownerId)
                 .originalFilename(originalFilename)
                 .contentType(contentType)
                 .size(size)
-                .data(data)
+                .objectKey(objectKey)
+                .url(url)
                 .build();
         return embeddedImageRepository.save(image);
     }
 
-    // ---------- Upload ----------
     @Transactional
-    protected ImageDto doUploadToPost(Long postId, ProcessedFile pf) {
+    public ImageDto uploadToPost(Long postId, MultipartFile file) {
         Post post = postRepository.findById(postId).orElseThrow(() -> new RuntimeException("Post Not Found"));
+
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.POST, post.getId());
+
         EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.POST, post.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
+                file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                upload.objectKey, upload.url);
+
         return imageMapper.toDto(saved);
     }
 
-    public ImageDto uploadToPost(Long postId, MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadToPost(postId, pf);
-    }
-
     @Transactional
-    protected ImageDto doUploadToPage(String pageSlug, ProcessedFile pf) {
+    public ImageDto uploadToPage(String pageSlug, MultipartFile file) {
         Page page = pageRepository.findBySlug(pageSlug);
         if (page == null) throw new RuntimeException("Page Not Found");
+
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.PAGE, page.getId());
+
         EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.PAGE, page.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
-        return imageMapper.toDto(saved);
-    }
+                file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                upload.objectKey, upload.url);
 
-    public ImageDto uploadToPage(String pageSlug, MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadToPage(pageSlug, pf);
-    }
-
-    @Transactional
-    protected ImageDto doUploadToHome(ProcessedFile pf) {
-        HomeProfile home = ensureHomeExists();
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.HOME, home.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
-        return imageMapper.toDto(saved);
-    }
-
-    public ImageDto uploadToHome(MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadToHome(pf);
-    }
-
-    @Transactional
-    protected ImageDto doUploadSiteAvatar(ProcessedFile pf) {
-        SiteConfig siteConfig = ensureSiteConfigExists();
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.SITE_AVATAR, siteConfig.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
-        siteConfig.setSiteAvatarImageId(saved.getId());
-        siteConfigRepository.save(siteConfig);
         return imageMapper.toDto(saved);
     }
 
     public ImageDto uploadSiteAvatar(MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadSiteAvatar(pf);
-    }
+        SiteConfig siteConfig = ensureSiteConfigExists();
 
-    @Transactional
-    protected ImageDto doUploadFavicon(ProcessedFile pf) {
-        BrowserIcon browserIcon = ensureBrowserIconExists();
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.FAVICON, browserIcon.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
-        browserIcon.setFaviconImageId(saved.getId());
-        browserIconRepository.save(browserIcon);
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.SITE_AVATAR, siteConfig.getId());
+
+        EmbeddedImage saved = transactionTemplate.execute(status -> {
+            EmbeddedImage image = saveImage(EmbeddedImage.OwnerType.SITE_AVATAR, siteConfig.getId(),
+                    file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                    upload.objectKey, upload.url);
+
+            siteConfig.setSiteAvatarImageId(image.getId());
+            siteConfigRepository.save(siteConfig);
+            return image;
+        });
+
         return imageMapper.toDto(saved);
     }
 
     public ImageDto uploadFavicon(MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadFavicon(pf);
-    }
-
-    @Transactional
-    protected ImageDto doUploadAppleTouchIcon(ProcessedFile pf) {
         BrowserIcon browserIcon = ensureBrowserIconExists();
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.APPLE_TOUCH_ICON, browserIcon.getId(),
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
-        browserIcon.setAppleTouchIconImageId(saved.getId());
-        browserIconRepository.save(browserIcon);
+
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.FAVICON, browserIcon.getId());
+
+        EmbeddedImage saved = transactionTemplate.execute(status -> {
+            EmbeddedImage image = saveImage(EmbeddedImage.OwnerType.FAVICON, browserIcon.getId(),
+                    file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                    upload.objectKey, upload.url);
+
+            browserIcon.setFaviconImageId(image.getId());
+            browserIconRepository.save(browserIcon);
+            return image;
+        });
+
         return imageMapper.toDto(saved);
     }
 
     public ImageDto uploadAppleTouchIcon(MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadAppleTouchIcon(pf);
-    }
+        BrowserIcon browserIcon = ensureBrowserIconExists();
 
-    @Transactional
-    protected ImageDto doUploadToSocial(Long socialId, ProcessedFile pf) {
-        Social social = socialRepository.findById(socialId).orElseThrow(() -> new RuntimeException("Social Not Found"));
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.SOCIAL, socialId,
-                pf.data, pf.originalFilename, pf.contentType, pf.size);
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.APPLE_TOUCH_ICON, browserIcon.getId());
+
+        EmbeddedImage saved = transactionTemplate.execute(status -> {
+            EmbeddedImage image = saveImage(EmbeddedImage.OwnerType.APPLE_TOUCH_ICON, browserIcon.getId(),
+                    file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                    upload.objectKey, upload.url);
+
+            browserIcon.setAppleTouchIconImageId(image.getId());
+            browserIconRepository.save(browserIcon);
+            return image;
+        });
+
         return imageMapper.toDto(saved);
     }
 
     public ImageDto uploadToSocial(Long socialId, MultipartFile file) {
-        ProcessedFile pf = processFile(file);
-        return doUploadToSocial(socialId, pf);
+        Social social = socialRepository.findById(socialId)
+                .orElseThrow(() -> new RuntimeException("Social Not Found"));
+
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.SOCIAL, social.getId());
+
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.SOCIAL, social.getId(),
+                file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                upload.objectKey, upload.url);
+
+        return imageMapper.toDto(saved);
+    }
+
+    public ImageDto uploadToHome(MultipartFile file) {
+        HomeProfile home = ensureHomeExists();
+
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.HOME, home.getId());
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.HOME, home.getId(),
+                file.getOriginalFilename(), file.getContentType(), file.getSize(),
+                upload.objectKey, upload.url);
+
+        return imageMapper.toDto(saved);
     }
 
     // ---------- List ----------
@@ -202,22 +241,25 @@ public class ImageService {
         return listImages(EmbeddedImage.OwnerType.HOME, home.getId());
     }
 
-    // ---------- Get Binary ----------
     @Transactional(readOnly = true)
     public EmbeddedImage get(EmbeddedImage.OwnerType ownerType, Long ownerId, Long imageId) {
         return embeddedImageRepository.findByIdAndOwnerTypeAndOwnerId(imageId, ownerType, ownerId)
                 .orElseThrow(() -> new RuntimeException("Image Not Found"));
     }
 
-    // ---------- Delete ----------
     @Transactional
     public void delete(EmbeddedImage.OwnerType ownerType, Long ownerId, Long imageId) {
         EmbeddedImage img = get(ownerType, ownerId, imageId);
+        deleteFromOSS(img.getObjectKey());
         embeddedImageRepository.delete(img);
     }
 
     @Transactional
     public void deleteAll(EmbeddedImage.OwnerType ownerType, Long ownerId) {
+        List<EmbeddedImage> images = embeddedImageRepository.findAllByOwnerTypeAndOwnerIdOrderByCreatedAtAsc(ownerType, ownerId);
+        for (EmbeddedImage img : images) {
+            deleteFromOSS(img.getObjectKey());
+        }
         embeddedImageRepository.deleteAllByOwnerTypeAndOwnerId(ownerType, ownerId);
     }
 
@@ -263,20 +305,41 @@ public class ImageService {
                 });
     }
 
-    private String generateSafeFilename(MultipartFile file, String contentType) {
+    private static String generateSafeFile(MultipartFile file, String contentType) {
         String originalName = file.getOriginalFilename();
         if (originalName != null && !originalName.trim().isEmpty()) {
             return originalName.replaceAll("[^a-zA-Z0-9._-]", "_");
         }
-        String ext = switch (contentType.toLowerCase(Locale.ROOT)) {
-            case "image/jpeg", "image/jpg" -> "jpg";
-            case "image/png" -> "png";
-            case "image/gif" -> "gif";
-            case "image/webp" -> "webp";
-            case "image/bmp" -> "bmp";
-            case "image/tiff" -> "tiff";
-            default -> null;
-        };
+        String ext = getFileExtension(null);
         return UUID.randomUUID() + (ext != null ? "." + ext : "");
+    }
+
+    private static String getFileExtension(String filename) {
+        if (filename == null) return null;
+        int dotIndex = filename.lastIndexOf('.');
+        if (dotIndex > 0 && dotIndex < filename.length() - 1) {
+            return filename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+        }
+        return null;
+    }
+
+    private String normalizeCdnUrl(String cdnDomain) {
+        if (cdnDomain == null || cdnDomain.trim().isEmpty()) {
+            return "";
+        }
+        if (!cdnDomain.startsWith("http://") && !cdnDomain.startsWith("https://")) {
+            return "https://" + cdnDomain;
+        }
+        return cdnDomain;
+    }
+
+    private static class UploadResult {
+        String objectKey;
+        String url;
+
+        UploadResult(String objectKey, String url) {
+            this.objectKey = objectKey;
+            this.url = url;
+        }
     }
 }

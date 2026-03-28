@@ -67,7 +67,7 @@ export interface PostDetailDto {
   content: string;
   slug: string;
   createdAt: string;
-  updateAt: string;
+  updatedAt: string;
   likeCount: number;
   dislikeCount: number;
   viewCount: number;
