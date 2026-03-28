@@ -13,7 +13,7 @@ It handles the entire stack for you:
 - **Backend** – Spring Boot (Java 21) with a pre‑configured MySQL database
 - **Frontend** – Vite + Vue (modern, fast, hot‑reload in development, production‑ready static files)
 - **Database** – Automatically creates a MySQL database (via Docker or your local installation) and imports sample data
-- **Apache integration** – Generates a production Apache virtual host configuration with **dynamic port detection**, reverse proxy, and SPA routing. You can specify your own domain name during setup.
+- **Apache integration** – Generates a production Apache virtual host configuration with **dynamic port detection**, reverse proxy, SPA routing, and **automatic HTTPS header forwarding**. You can specify your own domain name and optionally enable SSL during setup.
 - **Smart image handling** – Automatically compresses large images (>2MB) before upload to speed up page loads.
 - **Simple setup** – Run the configuration script as `root`, then start the services as the `www-data` user. Everything is configured and ready.
 
@@ -59,7 +59,9 @@ You just answer a few prompts and your blog is live.
     - Your blog title and footer text
     - Whether to change the default user password (default username: `gosling`)
     - **Your domain name** (e.g., `example.com`). If you don't have one yet, just press Enter to use the default `magiccodelab.com` – you can change it later by editing the Apache config or re-running the script.
-    - (Automatically) It will detect an available port for the backend (starting from 8080) and generate an Apache virtual host file with your domain.
+    - Whether to enable HTTPS (SSL). If you choose yes, you will be asked to provide the paths to your SSL certificate files (public.crt, chain.crt, and private key). The script will then generate a complete SSL-enabled virtual host.
+    - (Automatically) It will detect an available port for the backend (starting from 8080) and generate an Apache virtual host file with your domain.  
+    - The script will also add the necessary `X-Forwarded-Proto` header to the Apache SSL configuration and enable `server.forward-headers-strategy=framework` in the Spring Boot properties – so that your backend correctly understands that it is behind an HTTPS proxy (no more mixed-content warnings in Swagger UI).
 
 5. **After configuration completes**, start the services as the `www-data` user:
    ```bash
@@ -68,7 +70,7 @@ You just answer a few prompts and your blog is live.
 
 6. **That's it!**  
    Your blog will be running at:
-    - **Production mode (with Apache)**: http://your-domain (or http://your-server-ip if you haven't set up DNS)
+    - **Production mode (with Apache)**: http://your-domain (or https://your-domain if SSL enabled)
     - **Backend API**: http://localhost:8080 (or the dynamically selected port)
 
    The backend runs in the background, with logs written to `backend.log`.
@@ -129,27 +131,42 @@ This script handles the **one‑time setup**:
 
 5. **Dependency Installation & Build**
     - Installs frontend dependencies and builds the static files (`front/dist`).
-    - Downloads Maven dependencies for the backend.
+    - Downloads Maven dependencies for the backend **and builds a standalone JAR** (using `./mvnw clean package -DskipTests`). This JAR will be used by the start script.
 
 6. **Ownership Adjustment**
     - Changes the project directory owner to `www-data:www-data` – a crucial step for production security.
 
-7. **Apache Virtual Host Generation** (with custom domain)
+7. **Apache Virtual Host Generation** (with custom domain and optional SSL)
     - **Prompts you for your domain name** (default: `magiccodelab.com`).
+    - **Prompts whether to enable SSL**.
     - Detects an available port for the backend (starting from 8080).
+    - If SSL is enabled, it checks that the required Apache modules (`proxy`, `proxy_http`, `rewrite`, `headers`) are enabled. If any are missing, it tells you how to enable them and exits.
     - Generates a complete Apache configuration file at `/etc/apache2/sites-available/your-domain.conf` with:
         - DocumentRoot pointing to `front/dist`
         - SPA routing (Rewrite rules)
         - Reverse proxy for `/api`, `/login`, and Swagger endpoints using the detected dynamic port
         - Correct `ServerName` and `ServerAdmin` based on your domain
+        - If SSL is enabled, it adds:
+            - SSL engine and certificate directives
+            - `RequestHeader set X-Forwarded-Proto "https"` so the backend knows the original request was HTTPS
+    - Writes the backend port to `.backend-port` for the start script to use.
     - Enables the site and reloads Apache.
+
+8. **OSS Configuration**
+    - Prompts for Aliyun OSS credentials (if you use cloud storage). Saves them in `.env.oss` (secured with `chmod 600`).
+
+9. **Spring Boot Proxy Headers**
+    - Adds `server.forward-headers-strategy=framework` to `application.properties` to make Spring Boot trust the `X-Forwarded-Proto` header.
 
 ### `start.sh` (run as `www-data`)
 This script **starts the backend service** in the background:
 
-- Checks Node.js version (required for frontend, but in production the frontend is served by Apache).
-- Starts the backend with `./mvnw spring-boot:run` (logs → `backend.log`).
-- Saves the process PID to `backend.pid` for easy management.
+- Checks for the built JAR file in `backend/target/`. If missing, it exits with a helpful message.
+- Loads OSS environment variables from `.env.oss`.
+- Reads the backend port from `.backend-port` (created by `configure.sh`).
+- Stops any previous backend process using the PID file, and also forcibly kills any process still holding the port (to avoid "address already in use" errors).
+- Runs the JAR with `java -jar` and passes the `--server.port` argument, ensuring the real Java process PID is recorded.
+- Saves the PID to `backend.pid` for easy management.
 - Verifies that the frontend static files (`front/dist`) exist (they were built by `configure.sh`).
 
 ---
@@ -250,15 +267,21 @@ sudo -u www-data ./start.sh
 Also ensure that the project files are owned by `www-data` (the configuration script does this automatically).
 
 ### Apache config not working
-- Check that Apache is installed and the required modules are enabled:
+- Ensure Apache is installed and the required modules are enabled:
   ```bash
-  sudo a2enmod proxy proxy_http rewrite
+  sudo a2enmod proxy proxy_http rewrite headers   # headers is required for SSL
   sudo systemctl restart apache2
   ```
-- Verify the generated config file at `/etc/apache2/sites-available/your-domain.conf` and ensure the `ServerName` matches your domain.
+- Check the generated config file at `/etc/apache2/sites-available/your-domain.conf` and verify the `ServerName` matches your domain.
 - If you later change the backend port manually (e.g., because another service took the port), you can either:
   - Re-run `sudo ./configure.sh` to regenerate the Apache config with a new port, or
   - Update the `ProxyPass` lines in the config file manually and reload Apache.
+
+### Mixed content warnings in Swagger UI (when using HTTPS)
+If you see "This page is loading over HTTPS but requested an insecure XMLHttpRequest endpoint", it means the backend is generating `http://` links. The configuration script already adds `RequestHeader set X-Forwarded-Proto "https"` and `server.forward-headers-strategy=framework`. If it still happens, verify these lines are present in your Apache SSL config and in `application.properties`. Then restart the backend (`sudo -u www-data ./start.sh`).
+
+### Port already in use when starting
+The start script now forcibly kills any process using the port before starting the new backend. If you still get "address already in use", check if another instance is running (e.g., a leftover Maven process) and manually kill it with `sudo kill -9 $(lsof -ti:8080)`.
 
 ### Images show as broken after saving
 This is usually because the temporary blob URLs were not replaced. In the browser console, check if the image uploads succeeded (look for network requests to `/api/posts/.../images`).  
@@ -272,7 +295,7 @@ If they failed, the images remain as blob URLs – you can re-upload them after 
 - **Frontend** – Vite + Vue 3, with a clean, Vim‑inspired design, and an editor with image/video embedding, LaTeX support, and auto‑compression of large images.
 - **Sample data** – A few blog posts and one user (`gosling` with password `123456` unless you changed it).
 - **Database** – Automatically configured with UTF‑8 support.
-- **Apache integration** – Ready‑to‑use production virtual host configuration with custom domain support.
+- **Apache integration** – Ready‑to‑use production virtual host configuration with custom domain and optional SSL support.
 
 ---
 
