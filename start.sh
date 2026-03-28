@@ -41,7 +41,7 @@ fi
 chmod +x backend/mvnw
 
 # -------------------------------------------------------------------
-# 3. 加载 OSS 环境变量 (新增)
+# 3. 加载 OSS 环境变量
 # -------------------------------------------------------------------
 OSS_ENV_FILE=".env.oss"
 
@@ -54,11 +54,22 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 4. 启动后端 (Spring Boot)
+# 4. 读取后端端口（由 configure.sh 生成）
 # -------------------------------------------------------------------
-echo -e "${BLUE}...Starting Backend Service (Java API)...${NC}"
+BACKEND_PORT_FILE=".backend-port"
+if [ ! -f "$BACKEND_PORT_FILE" ]; then
+    echo -e "${RED}✘ Backend port file ($BACKEND_PORT_FILE) not found. Please run ./configure.sh first.${NC}"
+    exit 1
+fi
+BACKEND_PORT=$(cat "$BACKEND_PORT_FILE" | grep -oP '(?<=:)\d+' || echo "8080")
+echo -e "${GREEN}✔ Using backend port: $BACKEND_PORT${NC}"
 
-# 检查是否已有旧进程运行，如果有则先关闭（可选，但推荐）
+# -------------------------------------------------------------------
+# 5. 启动后端 (Spring Boot) 使用指定端口
+# -------------------------------------------------------------------
+echo -e "${BLUE}...Starting Backend Service (Java API) on port $BACKEND_PORT...${NC}"
+
+# 检查是否已有旧进程运行，如果有则先关闭
 if [ -f "backend.pid" ]; then
     OLD_PID=$(cat backend.pid)
     if ps -p $OLD_PID > /dev/null; then
@@ -73,8 +84,8 @@ export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/.m2-repo"
 mkdir -p "$(pwd)/.m2-repo"
 
 cd backend || exit
-# 使用 nohup 后台运行 Java 后端
-nohup ./mvnw spring-boot:run > ../backend.log 2>&1 &
+# 使用 nohup 后台运行 Java 后端，指定端口
+nohup ./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=$BACKEND_PORT" > ../backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > ../backend.pid
 cd ..
@@ -87,7 +98,7 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 5. 前端状态确认 (Apache Mode)
+# 6. 前端状态确认 (Apache Mode)
 # -------------------------------------------------------------------
 echo -e "\n${BLUE}...Frontend Status...${NC}"
 if [ -d "front/dist" ]; then
@@ -99,10 +110,11 @@ else
 fi
 
 # -------------------------------------------------------------------
-# 6. 完成提示
+# 7. 完成提示
 # -------------------------------------------------------------------
 echo -e "\n${CYAN}==============================================${NC}"
 echo -e "  Backend PID:  ${YELLOW}$BACKEND_PID${NC} (Log: backend.log)"
+echo -e "  Backend Port: ${YELLOW}$BACKEND_PORT${NC}"
 echo -e "  Site URL:     ${GREEN}http://magiccodelab.com${NC}"
 echo -e "${CYAN}==============================================${NC}"
 echo -e "${BLUE}To monitor backend logs: tail -f backend.log${NC}"

@@ -198,7 +198,6 @@ echo -e "${GREEN}✔ Database configuration updated.${NC}"
 # ============================================================
 echo -e "\n${YELLOW}[2/8] Handling Initial Data...${NC}"
 if [ -f "$DATA_SQL_SOURCE" ]; then
-    # 先复制文件到目标位置，后续在第4步修改目标文件
     cp "$DATA_SQL_SOURCE" "$DATA_SQL_DEST"
     echo -e "${GREEN}✔ data.sql detected and moved to resources for auto-import.${NC}"
 else
@@ -243,7 +242,7 @@ echo "http://localhost:8080" > .backend-port
 echo -e "${GREEN}✔ Frontend configured.${NC}"
 
 # ============================================================
-# 4. 修改默认用户凭证
+# 4. 修改默认用户凭证（基于用户名 gosling）
 # ============================================================
 echo -e "\n${YELLOW}[4/8] Default User Credentials Configuration...${NC}"
 echo -e "Default user in data.sql: ${CYAN}gosling${NC}"
@@ -276,29 +275,24 @@ else
 
             echo -e "${YELLOW}...Generating password hash...${NC}"
             
-            # 优先级 1: htpasswd
+            # 尝试生成哈希
             if command -v htpasswd &>/dev/null; then
                 NEW_PASS_HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
-            
-            # 优先级 2: Python3
             elif python3 -c "import bcrypt" &>/dev/null; then
                 NEW_PASS_HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$NEW_PASS1'.encode(), bcrypt.gensalt(12)).decode())")
-            
-            # 优先级 3: 尝试自动安装 htpasswd
-            elif [[ -f /etc/debian_version ]]; then
-                echo -e "${YELLOW}Missing hash tools. Installing apache2-utils...${NC}"
-                apt-get update -qq && apt-get install -y apache2-utils >/dev/null 2>&1
-                if command -v htpasswd &>/dev/null; then
-                    NEW_PASS_HASH=$(htpasswd -bnBC 12 "" "$NEW_PASS1" | tr -d ':\n' | sed 's/^.*://')
-                fi
+            else
+                echo -e "${RED}✘ Cannot generate password hash: neither 'htpasswd' nor Python bcrypt module found.${NC}"
+                echo -e "${YELLOW}Please install apache2-utils (htpasswd) or python3-bcrypt and rerun.${NC}"
+                exit 1
             fi
 
             if [[ -z "$NEW_PASS_HASH" ]]; then
-                echo -e "${RED}✘ Failed to generate hash. Please run: sudo apt install apache2-utils${NC}"
+                echo -e "${RED}✘ Failed to generate password hash.${NC}"
+                exit 1
             fi
         fi
 
-        # 3. 追加 SQL UPDATE 语句
+        # 3. 追加 SQL UPDATE 语句（基于用户名 gosling）
         echo -e "${YELLOW}...Appending UPDATE statement to data.sql...${NC}"
         
         sed -i -e '$a\' "$DATA_SQL_DEST"
@@ -307,11 +301,11 @@ else
         
         if [[ -n "$NEW_PASS_HASH" ]]; then
             # 更新用户名和密码
-            echo "UPDATE users SET username = '${NEW_USERNAME}', password = '${NEW_PASS_HASH}' WHERE id = 1;" >> "$DATA_SQL_DEST"
+            echo "UPDATE users SET username = '${NEW_USERNAME}', password = '${NEW_PASS_HASH}' WHERE username = 'gosling';" >> "$DATA_SQL_DEST"
             echo -e "${GREEN}✔ data.sql updated: User '${NEW_USERNAME}' password reset command appended.${NC}"
         elif [[ "$NEW_USERNAME" != "gosling" ]]; then
             # 只更新用户名
-            echo "UPDATE users SET username = '${NEW_USERNAME}' WHERE id = 1;" >> "$DATA_SQL_DEST"
+            echo "UPDATE users SET username = '${NEW_USERNAME}' WHERE username = 'gosling';" >> "$DATA_SQL_DEST"
             echo -e "${GREEN}✔ data.sql updated: Username changed to '${NEW_USERNAME}'.${NC}"
         else
             echo -e "${CYAN}No changes required.${NC}"
@@ -377,6 +371,33 @@ fi
 # ============================================================
 echo -e "\n${YELLOW}[7/8] Generating Apache virtual host configuration (with HTTPS support)...${NC}"
 
+# 检查 Apache 必要模块是否启用
+check_apache_module() {
+    local module=$1
+    if ! a2query -m "$module" &>/dev/null; then
+        echo -e "${RED}✘ Apache module '$module' is not enabled.${NC}"
+        return 1
+    fi
+    return 0
+}
+
+echo -e "${YELLOW}Checking Apache required modules...${NC}"
+MISSING_MODULES=()
+for mod in proxy proxy_http rewrite; do
+    if ! check_apache_module "$mod"; then
+        MISSING_MODULES+=("$mod")
+    fi
+done
+
+if [ ${#MISSING_MODULES[@]} -gt 0 ]; then
+    echo -e "${RED}✘ The following Apache modules are not enabled: ${MISSING_MODULES[*]}${NC}"
+    echo -e "${YELLOW}Please enable them manually and rerun this script:${NC}"
+    echo -e "  sudo a2enmod proxy proxy_http rewrite"
+    echo -e "  sudo systemctl restart apache2"
+    exit 1
+fi
+echo -e "${GREEN}✔ All required Apache modules are enabled.${NC}"
+
 # 获取用户域名
 echo -e "\n${YELLOW}Please enter your domain name (e.g., example.com) for Apache configuration.${NC}"
 echo -e "If you don't have a domain, you can use your server's IP address or the default 'magiccodelab.com'."
@@ -411,6 +432,10 @@ echo -e "${GREEN}✔ Available backend port detected: $BACKEND_PORT${NC}"
 
 echo "http://localhost:$BACKEND_PORT" > .backend-port
 echo -e "${GREEN}✔ .backend-port file created with port $BACKEND_PORT.${NC}"
+
+# 获取项目绝对路径
+PROJECT_ROOT="$(pwd)"
+FRONT_DIST="$PROJECT_ROOT/front/dist"
 
 # Apache 站点配置文件路径（基于域名）
 APACHE_SITE_AVAILABLE="/etc/apache2/sites-available/$DOMAIN.conf"
@@ -455,14 +480,14 @@ if [[ "$ENABLE_SSL" == "y" || "$ENABLE_SSL" == "Y" ]]; then
     ServerName $DOMAIN
     ServerAdmin webmaster@$DOMAIN
 
-    DocumentRoot /var/www/sudo-make-me-a-website/front/dist
+    DocumentRoot $FRONT_DIST
 
     SSLEngine on
     SSLCertificateFile $SSL_CERT_FILE
     SSLCertificateChainFile $SSL_CHAIN_FILE
     SSLCertificateKeyFile $SSL_KEY_FILE
 
-    <Directory /var/www/sudo-make-me-a-website/front/dist>
+    <Directory $FRONT_DIST>
         Options FollowSymLinks
         AllowOverride All
         Require all granted
@@ -509,9 +534,9 @@ else
     ServerAdmin webmaster@$DOMAIN
 
     # 静态前端文件位置（由 npm run build 生成）
-    DocumentRoot /var/www/sudo-make-me-a-website/front/dist
+    DocumentRoot $FRONT_DIST
 
-    <Directory /var/www/sudo-make-me-a-website/front/dist>
+    <Directory $FRONT_DIST>
         Options FollowSymLinks
         AllowOverride All
         Require all granted
