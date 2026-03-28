@@ -49,6 +49,14 @@ OSS_ENV_FILE=".env.oss"
 if [ -f "$OSS_ENV_FILE" ]; then
     echo -e "${BLUE}Loading OSS environment variables...${NC}"
     source "$OSS_ENV_FILE"
+    
+    # 验证关键变量是否已加载
+    if [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
+        echo -e "${RED}✘ OSS variables not properly loaded from $OSS_ENV_FILE.${NC}"
+        echo -e "${YELLOW}Please check file permissions (should be readable by www-data).${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✔ OSS variables loaded successfully.${NC}"
 else
     echo -e "${RED}✘ Missing $OSS_ENV_FILE. Please run ./configure.sh first.${NC}"
     exit 1
@@ -81,10 +89,12 @@ if [ -f "backend.pid" ]; then
 fi
 
 # 确保没有其他进程占用该端口
-if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo -e "${YELLOW}...Port $BACKEND_PORT is still occupied, attempting to kill the occupying process...${NC}"
-    kill -9 $(lsof -ti:$BACKEND_PORT) 2>/dev/null
-    sleep 2
+if command -v lsof &>/dev/null; then
+    if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+        echo -e "${YELLOW}...Port $BACKEND_PORT is still occupied, attempting to kill the occupying process...${NC}"
+        kill -9 $(lsof -ti:$BACKEND_PORT) 2>/dev/null
+        sleep 2
+    fi
 fi
 
 # 运行 JAR 文件，记录 Java 进程 PID
