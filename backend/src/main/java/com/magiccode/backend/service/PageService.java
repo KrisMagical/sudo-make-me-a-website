@@ -64,6 +64,10 @@ public class PageService {
 
         Page page = pageMapper.toEntity(dto);
 
+        LocalDateTime now = LocalDateTime.now();
+        page.setCreatedAt(dto.getCreatedAt() != null ? dto.getCreatedAt() : now);
+        page.setUpdatedAt(null);
+
         if (dto.getParentId() != null) {
             Page parent = pageRepository.findById(dto.getParentId())
                     .orElseThrow(() -> new RuntimeException("Parent Page Not Found"));
@@ -90,19 +94,38 @@ public class PageService {
         Page page = pageRepository.findBySlug(slug);
         if (page == null) throw new RuntimeException("Page Not Found.");
 
+        boolean contentChanged = false;
         boolean isDraft = slug.equals(DRAFT_SLUG);
         boolean becomingReal = dto.getSlug() != null && !dto.getSlug().equals(DRAFT_SLUG);
 
-        if (dto.getSlug() != null && !dto.getSlug().isBlank()) {
-            String newSlug = dto.getSlug().trim();
-            if (!newSlug.equals(page.getSlug()) && pageRepository.existsBySlug(newSlug)) {
-                throw new RuntimeException("Slug already exists");
-            }
-            page.setSlug(newSlug);
+        if (dto.getCreatedAt() != null) {
+            page.setCreatedAt(dto.getCreatedAt());
+            contentChanged = true;
+        } else if (isDraft && becomingReal) {
+            page.setCreatedAt(LocalDateTime.now());
+            contentChanged = true;
         }
 
-        if (dto.getTitle() != null) page.setTitle(dto.getTitle());
-        if (dto.getContent() != null) page.setContent(dto.getContent());
+        if (dto.getSlug() != null && !dto.getSlug().isBlank()) {
+            String newSlug = dto.getSlug().trim();
+            if (!newSlug.equals(page.getSlug())) {
+                if (pageRepository.existsBySlug(newSlug)) {
+                    throw new RuntimeException("Slug already exists");
+                }
+                page.setSlug(newSlug);
+                contentChanged = true;
+            }
+        }
+
+        if (dto.getTitle() != null && !dto.getTitle().equals(page.getTitle())) {
+            page.setTitle(dto.getTitle());
+            contentChanged = true;
+        }
+
+        if (dto.getContent() != null && !dto.getContent().equals(page.getContent())) {
+            page.setContent(dto.getContent());
+            contentChanged = true;
+        }
 
         if (dto.getParentId() != null) {
             Long currentParentId = page.getParent() != null ? page.getParent().getId() : null;
@@ -113,15 +136,17 @@ public class PageService {
                     throw new RuntimeException("Cannot set parent to a descendant of current page");
                 }
                 page.setParent(parent);
+                contentChanged = true;
             }
         }
 
-        if (dto.getOrderIndex() != null) {
+        if (dto.getOrderIndex() != null && !dto.getOrderIndex().equals(page.getOrderIndex())) {
             page.setOrderIndex(dto.getOrderIndex());
+            contentChanged = true;
         }
 
-        if (isDraft && becomingReal) {
-            page.setCreatedAt(LocalDateTime.now());
+        if (contentChanged) {
+            page.setUpdatedAt(LocalDateTime.now());
         }
 
         pageRepository.save(page);
@@ -180,6 +205,8 @@ public class PageService {
         } else {
             page.setOrderIndex(request.getOrderIndex());
         }
+
+        page.setUpdatedAt(LocalDateTime.now());
 
         pageRepository.save(page);
         return buildReturnDto(page);
@@ -265,6 +292,7 @@ public class PageService {
                 changed = true;
             }
             if (changed) {
+                childPage.setUpdatedAt(LocalDateTime.now());
                 pageRepository.save(childPage);
             }
             orderCounter++;

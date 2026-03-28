@@ -19,7 +19,6 @@ const saving = ref(false)
 
 // 用于右侧插入链接的搜索
 const searchTerm = ref('')
-// 新增：父页面选择器的搜索关键词
 const parentSearch = ref('')
 
 const editorRef = ref<InstanceType<typeof Editor>>()
@@ -31,12 +30,32 @@ const onImageUploaded = () => {
 
 const isEditing = computed(() => route.name === 'admin-page-edit')
 
-// 关键修复：获取当前数据库里真实存在的 slug。
+const createdAtLocal = computed({
+  get: () => {
+    if (!page.value?.createdAt) return ''
+    const date = new Date(page.value.createdAt)
+    if (isNaN(date.getTime())) return ''
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  },
+  set: (value: string) => {
+    if (page.value && value) {
+      const date = new Date(value)
+      if (!isNaN(date.getTime())) {
+        page.value.createdAt = date.toISOString()
+      }
+    }
+  }
+})
+
 const currentDbSlug = computed(() => isEditing.value ? (route.params.slug as string) : DRAFT_SLUG)
 
 const indentedPages = computed(() => buildIndentedList(allPages.value, page.value?.id))
 
-// --- 新增辅助函数：收集指定页面的所有祖先 ID ---
 const collectAncestors = (pageId: number, pagesList: PageDto[]): Set<number> => {
   const ancestors = new Set<number>()
   let current = pagesList.find(p => p.id === pageId)
@@ -200,16 +219,13 @@ const save = async () => {
   try {
     const targetSlug = isEditing.value ? (route.params.slug as string) : DRAFT_SLUG
 
-    // 第一次保存：将草稿转正或更新，获取真实 id
     const savedPage = await pagesApi.update(targetSlug, page.value)
-    page.value = savedPage // 更新前端状态
+    page.value = savedPage
 
-    // 等待图片上传完成（此时编辑器内容已被替换为真实 URL）
     if (editorRef.value) {
       await editorRef.value.processPendingUploads(savedPage.id, savedPage.slug)
     }
 
-    // 第二次保存：将包含真实图片 URL 的内容提交到服务器
     const finalPage = await pagesApi.update(savedPage.slug, page.value)
     page.value = finalPage
 
@@ -218,11 +234,9 @@ const save = async () => {
     if (!isEditing.value) {
       await router.push({ name: 'admin-page-edit', params: { slug: finalPage.slug } })
     } else if (route.params.slug !== finalPage.slug) {
-      // 若修改了 Slug，需要替换 URL
       await router.replace({ name: 'admin-page-edit', params: { slug: finalPage.slug } })
     }
 
-    // 注意：不再调用 fetchData()，因为 page.value 已经是最新数据
   } catch (error: any) {
     if (error.response?.status === 401) {
       notify('Session expired. Please login again.', 'error')
@@ -374,6 +388,15 @@ onMounted(fetchData)
               </p>
             </div>
           </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Created Date</label>
+          <input
+            type="datetime-local"
+            v-model="createdAtLocal"
+            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono text-sm"
+          />
         </div>
 
         <!-- Insert Sub-Page Panel -->

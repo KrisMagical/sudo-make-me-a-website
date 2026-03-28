@@ -26,12 +26,33 @@ const onImageUploaded = () => {
 
 const isEditing = computed(() => route.name === 'admin-post-edit')
 
+const createdAtLocal = computed({
+  get: () => {
+    if (!post.value?.createdAt) return ''
+    const date = new Date(post.value.createdAt)
+    if (isNaN(date.getTime())) return ''
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  },
+  set: (value: string) => {
+    if (post.value && value) {
+      const date = new Date(value)
+      if (!isNaN(date.getTime())) {
+        post.value.createdAt = date.toISOString()
+      }
+    }
+  }
+})
+
 const fetchData = async () => {
   loading.value = true
   try {
     categories.value = await categoriesApi.list()
 
-    // 如果没有分类且试图创建新文章，拦截
     if (!isEditing.value && categories.value.length === 0) {
       notify('Please create a Category first before writing a post', 'warning')
       router.push('/admin/categories')
@@ -44,17 +65,14 @@ const fetchData = async () => {
     } else {
       let draftPost: PostDetailDto | null = null
 
-      // 尝试获取现存的草稿
       try {
         draftPost = await postsApi.getDetail(DRAFT_SLUG)
       } catch (e) {
-        // 如果后端抛出404等异常，说明没有草稿记录，继续走到下一步创建
       }
 
       if (draftPost && draftPost.id) {
         post.value = draftPost
       } else {
-        // 选用任意一个(第一个)分类作为占位
         const defaultCat = categories.value[0]
         const newDraft: any = {
           id: 0,
@@ -72,7 +90,6 @@ const fetchData = async () => {
         post.value = await postsApi.create(defaultCat.slug, newDraft)
       }
 
-      // 如果是刚创建或恢复的草稿，将展示给用户的标题和slug清空
       if (post.value) {
         if (post.value.title === DRAFT_SLUG) post.value.title = ''
         if (post.value.slug === DRAFT_SLUG) post.value.slug = ''
@@ -113,17 +130,12 @@ const save = async () => {
   try {
     const targetSlug = isEditing.value ? (route.params.slug as string) : DRAFT_SLUG
 
-    // 第一次保存：将草稿转正或更新，获取真实 id
     await postsApi.update(post.value.id, categorySlug, post.value)
-    // 注意：post.value 中可能包含临时图片 URL，但第一次保存是为了获取真实 id
-    // 真实 id 已在 post.value 中，但为确保最新，可以从返回结果获取，但接口未返回，所以用原对象
 
-    // 等待图片上传完成
     if (editorRef.value && post.value.id) {
       await editorRef.value.processPendingUploads(post.value.id)
     }
 
-    // 第二次保存：将包含真实图片 URL 的内容提交到服务器
     const savedPost = await postsApi.update(post.value.id, categorySlug, post.value)
     post.value = savedPost
 
@@ -161,7 +173,6 @@ const discardChanges = async () => {
 
 onMounted(fetchData)
 </script>
-
 <template>
   <div class="space-y-8">
     <div class="flex justify-between items-end border-b-2 border-zinc-800 pb-2">
@@ -245,6 +256,17 @@ onMounted(fetchData)
               {{ category.name }}
             </option>
           </select>
+        </div>
+
+        <div>
+          <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">
+            Created Date
+          </label>
+          <input
+            type="datetime-local"
+            v-model="post.createdAtLocal"
+            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono text-sm"
+          />
         </div>
 
         <div v-if="isEditing" class="border border-zinc-200 dark:border-zinc-800 p-4">

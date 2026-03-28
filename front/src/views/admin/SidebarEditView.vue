@@ -178,6 +178,9 @@ const updateSiteConfig = async () => {
     if (updated.siteAvatarUrl) {
       siteAvatarPreview.value = updated.siteAvatarUrl
     }
+    if (updated.siteName) {
+      document.title = updated.siteName
+    }
     notify('Site configuration updated successfully', 'success')
   } catch (error) {
     notify('Failed to update site configuration', 'error')

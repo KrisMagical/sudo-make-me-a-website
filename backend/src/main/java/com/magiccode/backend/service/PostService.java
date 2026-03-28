@@ -79,6 +79,11 @@ public class PostService {
         }
 
         Post post = postDetailMapper.toPostEntity(postDetailDto);
+
+        LocalDateTime now = LocalDateTime.now();
+        post.setCreatedAt(postDetailDto.getCreatedAt() != null ? postDetailDto.getCreatedAt() : now);
+        post.setUpdatedAt(null);
+
         post.setCategory(category);
         postRepository.save(post);
 
@@ -94,35 +99,53 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Post Not Found"));
 
-
+        boolean contentChanged = false;
         boolean isDraft = post.getSlug().equals(DRAFT_SLUG);
         boolean becomingReal = updatePostDetailDto.getSlug() != null && !updatePostDetailDto.getSlug().equals(DRAFT_SLUG);
+
+        if (updatePostDetailDto.getCreatedAt() != null) {
+            post.setCreatedAt(updatePostDetailDto.getCreatedAt());
+            contentChanged = true;
+        } else if (isDraft && becomingReal) {
+            post.setCreatedAt(LocalDateTime.now());
+            contentChanged = true;
+        }
+
+        if (updatePostDetailDto.getTitle() != null && !updatePostDetailDto.getTitle().equals(post.getTitle())) {
+            post.setTitle(updatePostDetailDto.getTitle());
+            contentChanged = true;
+        }
+
+        if (updatePostDetailDto.getSlug() != null && !updatePostDetailDto.getSlug().isBlank()) {
+            String newSlug = updatePostDetailDto.getSlug().trim();
+            if (!newSlug.equals(post.getSlug())) {
+                Post existing = postRepository.findBySlug(newSlug);
+                if (existing != null && !existing.getId().equals(id)) {
+                    throw new RuntimeException("Slug already exists, please use another slug.");
+                }
+                post.setSlug(newSlug);
+                contentChanged = true;
+            }
+        }
+
+        if (updatePostDetailDto.getContent() != null && !updatePostDetailDto.getContent().equals(post.getContent())) {
+            post.setContent(updatePostDetailDto.getContent());
+            contentChanged = true;
+        }
 
         if (categorySlug != null && !categorySlug.isBlank()) {
             Category category = categoryRepository.findBySlug(categorySlug);
             if (category == null) {
                 throw new RuntimeException("Category Not Found");
             }
-            post.setCategory(category);
-        }
-        if (updatePostDetailDto.getTitle() != null) {
-            post.setTitle(updatePostDetailDto.getTitle());
-        }
-
-        if (updatePostDetailDto.getSlug() != null && !updatePostDetailDto.getSlug().equals(post.getSlug())) {
-            Post existing = postRepository.findBySlug(updatePostDetailDto.getSlug());
-            if (existing != null && !existing.getId().equals(id)) {
-                throw new RuntimeException("Slug already exists, please use another slug.");
+            if (!category.equals(post.getCategory())) {
+                post.setCategory(category);
+                contentChanged = true;
             }
-            post.setSlug(updatePostDetailDto.getSlug());
         }
 
-        if (updatePostDetailDto.getContent() != null) {
-            post.setContent(updatePostDetailDto.getContent());
-        }
-
-        if (isDraft && becomingReal) {
-            post.setCreatedAt(LocalDateTime.now());
+        if (contentChanged) {
+            post.setUpdatedAt(LocalDateTime.now());
         }
 
         postRepository.save(post);

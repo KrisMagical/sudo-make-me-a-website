@@ -7,6 +7,20 @@ import App from './App.vue'
 import router from './router'
 import BrowserIcons from '@/utils/BrowserIcons.vue'
 
+async function initApp() {
+  try {
+    const siteConfig = await sidebarApi.getSiteConfig()
+    if (siteConfig?.siteName) {
+      document.title = siteConfig.siteName
+    } else {
+      document.title = 'My Blog'
+    }
+  } catch (error) {
+    console.error('Failed to fetch site config for title:', error)
+    document.title = 'My Blog'
+  }
+}
+
 const app = createApp(App)
 const pinia = createPinia()
 
