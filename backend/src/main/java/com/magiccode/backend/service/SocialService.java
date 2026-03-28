@@ -1,5 +1,6 @@
 package com.magiccode.backend.service;
 
+import com.magiccode.backend.dto.ImageDto;
 import com.magiccode.backend.dto.SocialDto;
 import com.magiccode.backend.mapping.SocialMapper;
 import com.magiccode.backend.model.EmbeddedImage;
@@ -24,26 +25,19 @@ public class SocialService {
         if (socialRepository.existsByName(dto.getName())) {
             throw new RuntimeException("Social already exists: " + dto.getName());
         }
-
-        ImageService.ProcessedFile pf;
-        if (iconFile != null && !iconFile.isEmpty()) {
-            pf = imageService.processFile(iconFile);
-        } else {
-            pf = null;
-        }
-
         return transactionTemplate.execute(status -> {
             Social social = socialMapper.toEntity(dto);
             social = socialRepository.save(social);
 
-            if (pf != null) {
-                EmbeddedImage saved = imageService.saveImage(EmbeddedImage.OwnerType.SOCIAL, social.getId(),
-                        pf.data, pf.originalFilename, pf.contentType, pf.size);
-                social.setIconImageId(saved.getId());
-                social.setIconUrl(resolveIconUrl(social));
-            } else if (externalIconUrl != null && !externalIconUrl.isBlank()) {
+            if (iconFile != null || !iconFile.isEmpty()) {
+                ImageDto imageDto = imageService.uploadToSocial(social.getId(), iconFile);
+                social.setIconImageId(imageDto.getId());
+                social.setIconUrl(imageDto.getUrl());
+                social.setExternalIconUrl(null);
+            } else if (externalIconUrl != null || !externalIconUrl.isBlank()) {
                 social.setExternalIconUrl(externalIconUrl.trim());
-                social.setIconUrl(resolveIconUrl(social));
+                social.setIconUrl(externalIconUrl.trim());
+                social.setIconImageId(null);
             }
 
             socialRepository.save(social);
@@ -63,13 +57,6 @@ public class SocialService {
         boolean hasFile = iconFile != null && !iconFile.isEmpty();
         boolean hasExternal = externalIconUrl != null && !externalIconUrl.isBlank();
 
-        ImageService.ProcessedFile pf;
-        if (hasFile) {
-            pf = imageService.processFile(iconFile);
-        } else {
-            pf = null;
-        }
-
         return transactionTemplate.execute(status -> {
             Social social = socialRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("Social not found"));
@@ -78,8 +65,7 @@ public class SocialService {
             if (dto.getUrl() != null) social.setUrl(dto.getUrl());
             if (dto.getDescription() != null) social.setDescription(dto.getDescription());
 
-            boolean changeIcon = hasFile || hasExternal;
-            if (changeIcon) {
+            if (hasFile || hasExternal) {
                 if (social.getIconImageId() != null) {
                     imageService.delete(EmbeddedImage.OwnerType.SOCIAL, social.getId(), social.getIconImageId());
                     social.setIconImageId(null);
@@ -88,13 +74,13 @@ public class SocialService {
                 social.setIconUrl(null);
 
                 if (hasFile) {
-                    EmbeddedImage saved = imageService.saveImage(EmbeddedImage.OwnerType.SOCIAL, social.getId(),
-                            pf.data, pf.originalFilename, pf.contentType, pf.size);
-                    social.setIconImageId(saved.getId());
+                    ImageDto imageDto = imageService.uploadToSocial(social.getId(), iconFile);
+                    social.setIconImageId(imageDto.getId());
+                    social.setIconUrl(imageDto.getUrl());
                 } else if (hasExternal) {
                     social.setExternalIconUrl(externalIconUrl.trim());
+                    social.setIconUrl(externalIconUrl.trim());
                 }
-                social.setIconUrl(resolveIconUrl(social));
             }
 
             socialRepository.save(social);
@@ -125,17 +111,7 @@ public class SocialService {
         SocialDto dto = socialMapper.toDto(social);
         dto.setIconImageId(social.getIconImageId());
         dto.setExternalIconUrl(social.getExternalIconUrl());
-        dto.setIconUrl(resolveIconUrl(social));
+        dto.setIconUrl(social.getIconUrl());
         return dto;
-    }
-
-    private String resolveIconUrl(Social social) {
-        if (social.getIconImageId() != null) {
-            return "/api/images/" + EmbeddedImage.OwnerType.SOCIAL + "/" + social.getId() + "/" + social.getIconImageId();
-        }
-        if (social.getExternalIconUrl() != null && !social.getExternalIconUrl().isBlank()) {
-            return social.getExternalIconUrl();
-        }
-        return null;
     }
 }
