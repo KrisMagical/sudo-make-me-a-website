@@ -317,9 +317,9 @@ else
 fi
 
 # ============================================================
-# 5. 安装依赖
+# 5. 安装依赖并打包后端 JAR
 # ============================================================
-echo -e "\n${YELLOW}[5/8] Installing dependencies as root...${NC}"
+echo -e "\n${YELLOW}[5/8] Installing dependencies and building backend JAR...${NC}"
 
 # 前端依赖与构建
 echo -e "${YELLOW}...Installing frontend dependencies & Building...${NC}"
@@ -334,17 +334,23 @@ fi
 echo -e "${GREEN}✔ Frontend built successfully (dist/ created).${NC}"
 cd ..
 
-# 后端 Maven 依赖
-echo -e "${YELLOW}...Downloading backend dependencies (Maven)...${NC}"
+# 后端 Maven 依赖下载并打包
+echo -e "${YELLOW}...Downloading backend dependencies and packaging JAR...${NC}"
 cd backend || exit
-# 显式指定 Maven 本地仓库路径
 export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/../.m2-repo"
+# 先下载依赖
 ./mvnw dependency:go-offline > ../backend-deps.log 2>&1
 if [ $? -ne 0 ]; then
     echo -e "${RED}✘ Maven dependency download failed. Check backend-deps.log${NC}"
     exit 1
 fi
-echo -e "${GREEN}✔ Backend dependencies downloaded.${NC}"
+# 打包，跳过测试
+./mvnw clean package -DskipTests > ../backend-build.log 2>&1
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✘ Backend package build failed. Check backend-build.log${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✔ Backend JAR built successfully.${NC}"
 cd ..
 
 # ============================================================

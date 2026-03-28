@@ -32,13 +32,14 @@ if [ "$(whoami)" != "www-data" ]; then
 fi
 
 # -------------------------------------------------------------------
-# 2. Maven 包装器检查
+# 2. 后端 JAR 文件检查
 # -------------------------------------------------------------------
-if [ ! -f "backend/mvnw" ]; then
-    echo -e "${RED}✘ Maven wrapper (backend/mvnw) not found.${NC}"
+JAR_FILE=$(find backend/target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -1)
+if [ -z "$JAR_FILE" ]; then
+    echo -e "${RED}✘ Backend JAR file not found. Please run ./configure.sh first.${NC}"
     exit 1
 fi
-chmod +x backend/mvnw
+echo -e "${GREEN}✔ Found backend JAR: $JAR_FILE${NC}"
 
 # -------------------------------------------------------------------
 # 3. 加载 OSS 环境变量
@@ -79,16 +80,17 @@ if [ -f "backend.pid" ]; then
     fi
 fi
 
-# 设置 Maven 本地仓库路径（与 configure.sh 一致）
-export MAVEN_OPTS="-Dmaven.repo.local=$(pwd)/.m2-repo"
-mkdir -p "$(pwd)/.m2-repo"
+# 确保没有其他进程占用该端口
+if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo -e "${YELLOW}...Port $BACKEND_PORT is still occupied, attempting to kill the occupying process...${NC}"
+    kill -9 $(lsof -ti:$BACKEND_PORT) 2>/dev/null
+    sleep 2
+fi
 
-cd backend || exit
-# 使用 nohup 后台运行 Java 后端，指定端口
-nohup ./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=$BACKEND_PORT" > ../backend.log 2>&1 &
+# 运行 JAR 文件，记录 Java 进程 PID
+nohup java -jar "$JAR_FILE" --server.port="$BACKEND_PORT" > backend.log 2>&1 &
 BACKEND_PID=$!
-echo $BACKEND_PID > ../backend.pid
-cd ..
+echo $BACKEND_PID > backend.pid
 
 if ps -p $BACKEND_PID > /dev/null; then
     echo -e "${GREEN}✔ Backend started with PID: $BACKEND_PID${NC}"
