@@ -395,15 +395,6 @@ for mod in proxy proxy_http rewrite; do
     fi
 done
 
-if [ ${#MISSING_MODULES[@]} -gt 0 ]; then
-    echo -e "${RED}✘ The following Apache modules are not enabled: ${MISSING_MODULES[*]}${NC}"
-    echo -e "${YELLOW}Please enable them manually and rerun this script:${NC}"
-    echo -e "  sudo a2enmod proxy proxy_http rewrite"
-    echo -e "  sudo systemctl restart apache2"
-    exit 1
-fi
-echo -e "${GREEN}✔ All required Apache modules are enabled.${NC}"
-
 # 获取用户域名
 echo -e "\n${YELLOW}Please enter your domain name (e.g., example.com) for Apache configuration.${NC}"
 echo -e "If you don't have a domain, you can use your server's IP address or the default 'magiccodelab.com'."
@@ -414,6 +405,22 @@ echo -e "${GREEN}✔ Using domain: $DOMAIN${NC}"
 # 询问是否启用 SSL
 read -p "Enable HTTPS (SSL)? (y/n): " ENABLE_SSL
 ENABLE_SSL=${ENABLE_SSL:-y}
+
+# 如果启用 SSL，还需要检查 headers 模块
+if [[ "$ENABLE_SSL" == "y" || "$ENABLE_SSL" == "Y" ]]; then
+    if ! check_apache_module "headers"; then
+        MISSING_MODULES+=("headers")
+    fi
+fi
+
+if [ ${#MISSING_MODULES[@]} -gt 0 ]; then
+    echo -e "${RED}✘ The following Apache modules are not enabled: ${MISSING_MODULES[*]}${NC}"
+    echo -e "${YELLOW}Please enable them manually and rerun this script:${NC}"
+    echo -e "  sudo a2enmod ${MISSING_MODULES[*]}"
+    echo -e "  sudo systemctl restart apache2"
+    exit 1
+fi
+echo -e "${GREEN}✔ All required Apache modules are enabled.${NC}"
 
 # 检测后端可用端口
 find_available_port() {
@@ -509,6 +516,9 @@ if [[ "$ENABLE_SSL" == "y" || "$ENABLE_SSL" == "Y" ]]; then
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyTimeout 300
+
+    # 传递原始协议头，使后端知道请求来自 HTTPS
+    RequestHeader set X-Forwarded-Proto \"https\"
 
     ProxyPass /login http://localhost:$BACKEND_PORT/login
     ProxyPassReverse /login http://localhost:$BACKEND_PORT/login
@@ -625,6 +635,18 @@ EOF
     echo -e "${GREEN}✔ OSS credentials saved to $OSS_ENV_FILE${NC}"
 else
     echo -e "${CYAN}ℹ Using existing OSS configuration.${NC}"
+fi
+
+# ============================================================
+# 9. 添加 Spring Boot 转发头策略
+# ============================================================
+echo -e "\n${YELLOW}[9/9] Configuring Spring Boot to trust proxy headers...${NC}"
+if ! grep -q "^server.forward-headers-strategy=" "$BACKEND_PROP"; then
+    echo "server.forward-headers-strategy=framework" >> "$BACKEND_PROP"
+    echo -e "${GREEN}✔ Added server.forward-headers-strategy=framework to application.properties${NC}"
+else
+    run_sed "s|^server.forward-headers-strategy=.*|server.forward-headers-strategy=framework|" "$BACKEND_PROP"
+    echo -e "${GREEN}✔ Updated server.forward-headers-strategy=framework in application.properties${NC}"
 fi
 
 # ============================================================
