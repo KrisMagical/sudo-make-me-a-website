@@ -608,7 +608,6 @@ echo -e "\n${YELLOW}[8/8] Aliyun OSS Configuration...${NC}"
 
 OSS_ENV_FILE=".env.oss"
 
-# 询问是否覆盖已有配置
 if [ -f "$OSS_ENV_FILE" ]; then
     read -p "OSS configuration already exists. Overwrite? (y/n): " overwrite
 else
@@ -632,7 +631,9 @@ export OSS_CDN_DOMAIN='cdn.magiccodelab.com'
 export OSS_REGION='$input_region'
 EOF
     chmod 600 "$OSS_ENV_FILE"
-    echo -e "${GREEN}✔ OSS credentials saved to $OSS_ENV_FILE${NC}"
+    # 确保 www-data 用户可以读取 OSS 配置
+    chown www-data:www-data "$OSS_ENV_FILE"
+    echo -e "${GREEN}✔ OSS credentials saved to $OSS_ENV_FILE (owner: www-data, mode: 600)${NC}"
 else
     echo -e "${CYAN}ℹ Using existing OSS configuration.${NC}"
 fi
