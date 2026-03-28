@@ -1,5 +1,6 @@
 package com.magiccode.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,6 +18,7 @@ public class PostDetailDto {
     private String title;
     private String content;
     private String slug;
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer likeCount;

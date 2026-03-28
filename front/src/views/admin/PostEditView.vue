@@ -28,22 +28,27 @@ const isEditing = computed(() => route.name === 'admin-post-edit')
 
 const createdAtLocal = computed({
   get: () => {
-    if (!post.value?.createdAt) return ''
-    const date = new Date(post.value.createdAt)
-    if (isNaN(date.getTime())) return ''
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${year}-${month}-${day}T${hours}:${minutes}`
+    const val = post.value?.createdAt;
+    if (!val) return '';
+
+    let date: Date;
+    if (Array.isArray(val)) {
+      date = new Date(val[0], val[1] - 1, val[2], val[3] || 0, val[4] || 0, val[5] || 0);
+    } else {
+      date = new Date(val);
+    }
+
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   },
-  set: (value: string) => {
-    if (post.value && value) {
-      const date = new Date(value)
-      if (!isNaN(date.getTime())) {
-        post.value.createdAt = date.toISOString()
-      }
+  set: (val: string) => {
+    if (post.value) {
+      post.value.createdAt = val ? `${val}:00` : '';
     }
   }
 })
@@ -264,7 +269,7 @@ onMounted(fetchData)
           </label>
           <input
             type="datetime-local"
-            v-model="post.createdAtLocal"
+            v-model="createdAtLocal"
             class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono text-sm"
           />
         </div>

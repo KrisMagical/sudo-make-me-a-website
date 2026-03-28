@@ -19,7 +19,6 @@ public interface PostSummaryMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "category", ignore = true)
     @Mapping(target = "comments",ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "likeCount", ignore = true)
     @Mapping(target = "dislikeCount", ignore = true)

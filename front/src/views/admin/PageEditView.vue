@@ -32,22 +32,27 @@ const isEditing = computed(() => route.name === 'admin-page-edit')
 
 const createdAtLocal = computed({
   get: () => {
-    if (!page.value?.createdAt) return ''
-    const date = new Date(page.value.createdAt)
-    if (isNaN(date.getTime())) return ''
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${year}-${month}-${day}T${hours}:${minutes}`
+    const val = page.value?.createdAt;
+    if (!val) return '';
+
+    let date: Date;
+    if (Array.isArray(val)) {
+      date = new Date(val[0], val[1] - 1, val[2], val[3] || 0, val[4] || 0, val[5] || 0);
+    } else {
+      date = new Date(val);
+    }
+
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   },
-  set: (value: string) => {
-    if (page.value && value) {
-      const date = new Date(value)
-      if (!isNaN(date.getTime())) {
-        page.value.createdAt = date.toISOString()
-      }
+  set: (val: string) => {
+    if (page.value) {
+      page.value.createdAt = val ? `${val}:00` : '';
     }
   }
 })
