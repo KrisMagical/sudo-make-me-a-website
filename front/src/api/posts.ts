@@ -6,6 +6,10 @@ export const postsApi = {
   listRecent: (limit = 10) =>
     request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
 
+  // 搜索文章（关键词）
+  search: (keyword: string, limit = 50) =>
+    request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q: keyword, limit } }),
+
   // 获取文章详情
   getDetail: (slug: string) =>
     request.get<PostDetailDto>(`/api/posts/${slug}`),
