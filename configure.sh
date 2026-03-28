@@ -193,18 +193,6 @@ run_sed "s|^spring.datasource.username=.*|spring.datasource.username=${DB_USER}|
 run_sed "s|^spring.datasource.password=.*|spring.datasource.password=${DB_PASS}|" "$BACKEND_PROP"
 echo -e "${GREEN}✔ Database configuration updated.${NC}"
 
-echo -e "\n${YELLOW}OSS Configuration (Optional)...${NC}"
-read -p "Do you want to set/update aliyun.oss.region? (y/n) [n]: " SET_OSS_REGION
-if [[ "$SET_OSS_REGION" == "y" || "$SET_OSS_REGION" == "Y" ]]; then
-    read -p "Enter OSS region (default: cn-guangzhou): " OSS_REGION
-    OSS_REGION=${OSS_REGION:-cn-guangzhou}
-    run_sed "/^aliyun.oss.region=/d" "$BACKEND_PROP"
-    echo "aliyun.oss.region=${OSS_REGION}" >> "$BACKEND_PROP"
-    echo -e "${GREEN}✔ OSS region configured.${NC}"
-else
-    echo -e "${CYAN}ℹ Skipping OSS region configuration.${NC}"
-fi
-
 # ============================================================
 # 2. 数据初始化
 # ============================================================
@@ -579,11 +567,11 @@ echo -e "\n${YELLOW}[8/8] Aliyun OSS Configuration...${NC}"
 
 OSS_ENV_FILE=".env.oss"
 
-echo -e "\n${BLUE}>> Aliyun OSS Configuration${NC}"
-
-# 如果文件已存在，可以选择跳过
+# 询问是否覆盖已有配置
 if [ -f "$OSS_ENV_FILE" ]; then
     read -p "OSS configuration already exists. Overwrite? (y/n): " overwrite
+else
+    overwrite="y"
 fi
 
 if [[ "$overwrite" == "y" || ! -f "$OSS_ENV_FILE" ]]; then
@@ -591,16 +579,18 @@ if [[ "$overwrite" == "y" || ! -f "$OSS_ENV_FILE" ]]; then
     read -p "Enter OSS AccessKey Secret: " input_key_secret
     read -p "Enter OSS Bucket Name [krismagic-images]: " input_bucket
     input_bucket=${input_bucket:-krismagic-images}
+    read -p "Enter OSS Region [cn-guangzhou]: " input_region
+    input_region=${input_region:-cn-guangzhou}
     
-    # 写入本地环境变量文件
     cat <<EOF > "$OSS_ENV_FILE"
 export OSS_ACCESS_KEY_ID='$input_key_id'
 export OSS_ACCESS_KEY_SECRET='$input_key_secret'
 export OSS_BUCKET_NAME='$input_bucket'
 export OSS_ENDPOINT='oss-cn-guangzhou.aliyuncs.com'
 export OSS_CDN_DOMAIN='cdn.magiccodelab.com'
+export OSS_REGION='$input_region'
 EOF
-    chmod 600 "$OSS_ENV_FILE" # 限制权限，仅当前用户可读
+    chmod 600 "$OSS_ENV_FILE"
     echo -e "${GREEN}✔ OSS credentials saved to $OSS_ENV_FILE${NC}"
 else
     echo -e "${CYAN}ℹ Using existing OSS configuration.${NC}"
