@@ -6,6 +6,7 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import BrowserIcons from '@/utils/BrowserIcons.vue'
+import { sidebarApi } from '@/api/sidebar'
 
 async function initApp() {
   try {
@@ -20,6 +21,7 @@ async function initApp() {
     document.title = 'My Blog'
   }
 }
+initApp()
 
 const app = createApp(App)
 const pinia = createPinia()

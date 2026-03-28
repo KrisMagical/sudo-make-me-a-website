@@ -77,36 +77,46 @@ public class SidebarService {
     }
 
     public SiteConfigDto updateSiteConfig(SiteConfigDto dto) {
-        Long oldSiteConfigId = siteConfigRepository.findByIsActiveTrue()
-                .map(SiteConfig::getId).orElse(null);
+        SiteConfig siteConfig = siteConfigRepository.findByIsActiveTrue()
+                .orElseGet(() -> {
+                    SiteConfig newConfig = SiteConfig.builder()
+                            .isActive(true)
+                            .build();
+                    return newConfig;
+                });
 
-        siteConfigRepository.findAll().forEach(config -> config.setIsActive(false));
-        siteConfigRepository.flush();
+        siteConfig.setSiteName(dto.getSiteName());
+        siteConfig.setAuthorName(dto.getAuthorName());
+        siteConfig.setFooterText(dto.getFooterText());
+        siteConfig.setMetaDescription(dto.getMetaDescription());
+        siteConfig.setMetaKeywords(dto.getMetaKeywords());
+        siteConfig.setCopyrightText(dto.getCopyrightText());
 
-        SiteConfig siteConfig = SiteConfig.builder()
-                .siteName(dto.getSiteName())
-                .authorName(dto.getAuthorName())
-                .siteAvatarImageId(dto.getSiteAvatarImageId())
-                .footerText(dto.getFooterText())
-                .metaDescription(dto.getMetaDescription())
-                .metaKeywords(dto.getMetaKeywords())
-                .copyrightText(dto.getCopyrightText())
-                .isActive(true)
-                .build();
-        SiteConfig saved = siteConfigRepository.save(siteConfig);
-
-        if (dto.getSiteAvatarImageId() != null && oldSiteConfigId != null) {
-            EmbeddedImage transferred = transferImageOwnership(
-                    EmbeddedImage.OwnerType.SITE_AVATAR,
-                    oldSiteConfigId,
-                    saved.getId(),
-                    dto.getSiteAvatarImageId()
-            );
-            if (transferred == null) {
-                saved.setSiteAvatarImageId(null);
-                siteConfigRepository.save(saved);
+        if (dto.getSiteAvatarImageId() != null) {
+            Long oldOwnerId = siteConfigRepository.findByIsActiveTrue()
+                    .map(SiteConfig::getId)
+                    .orElse(null);
+            if (oldOwnerId != null && !oldOwnerId.equals(siteConfig.getId())) {
+                EmbeddedImage transferred = transferImageOwnership(
+                        EmbeddedImage.OwnerType.SITE_AVATAR,
+                        oldOwnerId,
+                        siteConfig.getId(),
+                        dto.getSiteAvatarImageId()
+                );
+                if (transferred == null) {
+                    siteConfig.setSiteAvatarImageId(null);
+                } else {
+                    siteConfig.setSiteAvatarImageId(dto.getSiteAvatarImageId());
+                }
+            } else {
+                siteConfig.setSiteAvatarImageId(dto.getSiteAvatarImageId());
             }
+        } else {
+            siteConfig.setSiteAvatarImageId(null);
         }
+
+        siteConfig.setIsActive(true);
+        SiteConfig saved = siteConfigRepository.save(siteConfig);
 
         return buildSiteConfigDto(saved);
     }
@@ -119,46 +129,50 @@ public class SidebarService {
     }
 
     public BrowserIconDto updateBrowserIcon(BrowserIconDto dto) {
-        Long oldBrowserIconId = browserIconRepository.findByIsActiveTrue()
-                .map(BrowserIcon::getId).orElse(null);
+        BrowserIcon browserIcon = browserIconRepository.findByIsActiveTrue()
+                .orElseGet(() -> {
+                    BrowserIcon newIcon = BrowserIcon.builder()
+                            .isActive(true)
+                            .build();
+                    return newIcon;
+                });
 
-        browserIconRepository.findAll().forEach(icon -> icon.setIsActive(false));
-        browserIconRepository.flush();
+        browserIcon.setFaviconImageId(dto.getFaviconImageId());
+        browserIcon.setAppleTouchIconImageId(dto.getAppleTouchIconImageId());
 
-        BrowserIcon browserIcon = BrowserIcon.builder()
-                .faviconImageId(dto.getFaviconImageId())
-                .appleTouchIconImageId(dto.getAppleTouchIconImageId())
-                .isActive(true)
-                .build();
+        Long oldOwnerId = browserIconRepository.findByIsActiveTrue()
+                .map(BrowserIcon::getId)
+                .orElse(null);
+        if (oldOwnerId != null && !oldOwnerId.equals(browserIcon.getId())) {
+            if (dto.getFaviconImageId() != null) {
+                EmbeddedImage transferredFav = transferImageOwnership(
+                        EmbeddedImage.OwnerType.FAVICON,
+                        oldOwnerId,
+                        browserIcon.getId(),
+                        dto.getFaviconImageId()
+                );
+                if (transferredFav == null) {
+                    browserIcon.setFaviconImageId(null);
+                }
+            }
+            if (dto.getAppleTouchIconImageId() != null) {
+                EmbeddedImage transferredApple = transferImageOwnership(
+                        EmbeddedImage.OwnerType.APPLE_TOUCH_ICON,
+                        oldOwnerId,
+                        browserIcon.getId(),
+                        dto.getAppleTouchIconImageId()
+                );
+                if (transferredApple == null) {
+                    browserIcon.setAppleTouchIconImageId(null);
+                }
+            }
+        } else {
+            browserIcon.setFaviconImageId(dto.getFaviconImageId());
+            browserIcon.setAppleTouchIconImageId(dto.getAppleTouchIconImageId());
+        }
+
+        browserIcon.setIsActive(true);
         BrowserIcon saved = browserIconRepository.save(browserIcon);
-
-        if (dto.getFaviconImageId() != null && oldBrowserIconId != null) {
-            EmbeddedImage transferred = transferImageOwnership(
-                    EmbeddedImage.OwnerType.FAVICON,
-                    oldBrowserIconId,
-                    saved.getId(),
-                    dto.getFaviconImageId()
-            );
-            if (transferred == null) {
-                saved.setFaviconImageId(null);
-            }
-        }
-
-        if (dto.getAppleTouchIconImageId() != null && oldBrowserIconId != null) {
-            EmbeddedImage transferred = transferImageOwnership(
-                    EmbeddedImage.OwnerType.APPLE_TOUCH_ICON,
-                    oldBrowserIconId,
-                    saved.getId(),
-                    dto.getAppleTouchIconImageId()
-            );
-            if (transferred == null) {
-                saved.setAppleTouchIconImageId(null);
-            }
-        }
-
-        if (saved.getFaviconImageId() == null && saved.getAppleTouchIconImageId() == null) {
-        }
-        browserIconRepository.save(saved);
 
         return buildBrowserIconDto(saved);
     }

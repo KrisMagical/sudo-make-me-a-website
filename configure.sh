@@ -193,6 +193,18 @@ run_sed "s|^spring.datasource.username=.*|spring.datasource.username=${DB_USER}|
 run_sed "s|^spring.datasource.password=.*|spring.datasource.password=${DB_PASS}|" "$BACKEND_PROP"
 echo -e "${GREEN}✔ Database configuration updated.${NC}"
 
+echo -e "\n${YELLOW}OSS Configuration (Optional)...${NC}"
+read -p "Do you want to set/update aliyun.oss.region? (y/n) [n]: " SET_OSS_REGION
+if [[ "$SET_OSS_REGION" == "y" || "$SET_OSS_REGION" == "Y" ]]; then
+    read -p "Enter OSS region (default: cn-guangzhou): " OSS_REGION
+    OSS_REGION=${OSS_REGION:-cn-guangzhou}
+    run_sed "/^aliyun.oss.region=/d" "$BACKEND_PROP"
+    echo "aliyun.oss.region=${OSS_REGION}" >> "$BACKEND_PROP"
+    echo -e "${GREEN}✔ OSS region configured.${NC}"
+else
+    echo -e "${CYAN}ℹ Skipping OSS region configuration.${NC}"
+fi
+
 # ============================================================
 # 2. 数据初始化
 # ============================================================
