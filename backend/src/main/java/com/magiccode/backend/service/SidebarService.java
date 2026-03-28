@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,7 +40,9 @@ public class SidebarService {
                         .authorName("作者")
                         .build());
 
-        List<Page> allPages = pageRepository.findAll();
+        List<Page> allPages = pageRepository.findAll().stream()
+                .filter(page -> !"00100000".equals(page.getSlug()))
+                .collect(Collectors.toList());
 
         List<Category> categories = categoryRepository.findAll();
 
