@@ -29,12 +29,12 @@ public class SocialService {
             Social social = socialMapper.toEntity(dto);
             social = socialRepository.save(social);
 
-            if (iconFile != null || !iconFile.isEmpty()) {
+            if (iconFile != null && !iconFile.isEmpty()) {
                 ImageDto imageDto = imageService.uploadToSocial(social.getId(), iconFile);
                 social.setIconImageId(imageDto.getId());
                 social.setIconUrl(imageDto.getUrl());
                 social.setExternalIconUrl(null);
-            } else if (externalIconUrl != null || !externalIconUrl.isBlank()) {
+            } else if (externalIconUrl != null && !externalIconUrl.isBlank()) {
                 social.setExternalIconUrl(externalIconUrl.trim());
                 social.setIconUrl(externalIconUrl.trim());
                 social.setIconImageId(null);
