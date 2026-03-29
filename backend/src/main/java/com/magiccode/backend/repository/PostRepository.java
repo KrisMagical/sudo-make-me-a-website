@@ -27,6 +27,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             "p.createdAt DESC")
     List<Post> searchByKeyword(@Param("keyword") String keyword, Pageable pageable);
 
-    Page<Post> findByCategory(Category category, Pageable pageable);
+    // Page<Post> findByCategory(Category category, Pageable pageable);
+    Page<Post> findByCategoryAndSlugNot(Category category, String slug, Pageable pageable);
     List<Post> findBySlugNotOrderByCreatedAtDesc(String slug, Pageable pageable);
 }
