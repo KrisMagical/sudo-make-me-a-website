@@ -45,7 +45,7 @@ public class PostService {
         if (category == null) {
             throw new RuntimeException("Category Not Found.");
         }
-        Page<Post> postPage = postRepository.findByCategory(category, pageable);
+        Page<Post> postPage = postRepository.findByCategoryAndSlugNot(category, DRAFT_SLUG, pageable);
         return postPage.map(postSummaryMapper::toPostSummaryDto);
     }
 
