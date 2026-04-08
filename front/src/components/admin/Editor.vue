@@ -1,21 +1,8 @@
+<!-- src/components/admin/Editor.vue -->
 <script setup lang="ts">
-import { useEditor, EditorContent } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import TiptapImage from '@tiptap/extension-image'
-import Link from '@tiptap/extension-link'
-import Youtube from '@tiptap/extension-youtube'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
-import { Table } from '@tiptap/extension-table'
-import { TableRow } from '@tiptap/extension-table-row'
-import { TableCell } from '@tiptap/extension-table-cell'
-import { TableHeader } from '@tiptap/extension-table-header'
-import { Markdown } from 'tiptap-markdown'
-import { Node } from '@tiptap/core'
-import katex from 'katex'
-import 'katex/dist/katex.min.css'
-
 import { ref, watch, onBeforeUnmount } from 'vue'
+import { MdEditor, NormalToolbar } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 import request from '@/utils/request'
 import { notify } from '@/utils/feedback'
 import { parseVideoUrl } from '@/utils/videoParser'
@@ -30,153 +17,12 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue', 'image-uploaded'])
 
-const fileInput = ref<HTMLInputElement | null>(null)
-
-// 暂存图片队列（待保存后上传）
+const editorRef = ref<InstanceType<typeof MdEditor>>()
 const pendingImages = ref<{ file: File, tempUrl: string }[]>([])
+const isUploading = ref(false)
+const uploadProgress = ref(0)
 
-// 上传队列项类型
-type QueueItem = {
-  file: File
-  tempUrl?: string
-  forcedOwnerId?: number
-  forcedOwnerSlug?: string
-}
-const uploadQueue = ref<QueueItem[]>([])          // 待上传的文件队列
-const isUploading = ref(false)                    // 是否正在上传
-const uploadTotal = ref(0)                         // 总文件数
-const uploadCompleted = ref(0)                     // 已完成上传数
-const currentFileName = ref('')                    // 当前上传的文件名
-let cancelUpload = false                           // 取消上传标志
-
-// 用于等待上传完成的 Promise
-const uploadPromise = ref<Promise<void> | null>(null)
-
-// Custom math inline node
-const MathNode = Node.create({
-  name: 'mathInline',
-  group: 'inline',
-  inline: true,
-  atom: true,
-  addAttributes() {
-    return {
-      formula: {
-        default: '',
-        parseHTML: element => element.getAttribute('data-formula'),
-        renderHTML: attributes => ({
-          'data-formula': attributes.formula,
-          class: 'math-inline'
-        }),
-      },
-    }
-  },
-  parseHTML() {
-    return [
-      {
-        tag: 'span.math-inline',
-        getAttrs: element => ({
-          formula: element.getAttribute('data-formula')
-        })
-      }
-    ]
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['span', { class: 'math-inline', 'data-formula': HTMLAttributes.formula }, HTMLAttributes.formula]
-  },
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('span')
-      dom.className = 'math-inline-render'
-      try {
-        katex.render(node.attrs.formula, dom, {
-          throwOnError: false,
-          displayMode: false
-        })
-      } catch (error) {
-        dom.textContent = `$${node.attrs.formula}$`
-        dom.className = 'math-inline-error'
-      }
-      return { dom }
-    }
-  },
-})
-
-// Custom block math node
-const MathBlockNode = Node.create({
-  name: 'mathBlock',
-  group: 'block',
-  atom: true,
-  addAttributes() {
-    return {
-      formula: {
-        default: '',
-        parseHTML: element => element.getAttribute('data-formula'),
-        renderHTML: attributes => ({
-          'data-formula': attributes.formula,
-          class: 'math-block'
-        }),
-      },
-    }
-  },
-  parseHTML() {
-    return [
-      {
-        tag: 'div.math-block',
-        getAttrs: element => ({
-          formula: element.getAttribute('data-formula')
-        })
-      }
-    ]
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['div', { class: 'math-block', 'data-formula': HTMLAttributes.formula }, HTMLAttributes.formula]
-  },
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('div')
-      dom.className = 'math-block-render my-4 p-2 bg-gray-50 dark:bg-gray-800 rounded'
-      try {
-        katex.render(node.attrs.formula, dom, {
-          throwOnError: false,
-          displayMode: true
-        })
-      } catch (error) {
-        dom.textContent = `$$\n${node.attrs.formula}\n$$`
-        dom.className = 'math-block-error'
-      }
-      return { dom }
-    }
-  },
-})
-
-// Custom Iframe extension
-const Iframe = Node.create({
-  name: 'iframe',
-  group: 'block',
-  atom: true,
-  addOptions() {
-    return {
-      HTMLAttributes: {
-        class: 'w-full h-full border-0',
-      },
-    }
-  },
-  addAttributes() {
-    return {
-      src: { default: null },
-      frameborder: { default: '0' },
-      allowfullscreen: { default: 'true' },
-    }
-  },
-  parseHTML() {
-    return [{ tag: 'iframe' }]
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['div', { class: 'video-wrapper my-6 relative aspect-video w-full' }, ['iframe', HTMLAttributes]]
-  },
-})
-
-// --- Image compression logic ---
+// 图片压缩（复用原有逻辑）
 const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.8): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -218,239 +64,8 @@ const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 
   })
 }
 
-// --- Editor initialization ---
-const editor = useEditor({
-  content: props.modelValue,
-  extensions: [
-    StarterKit.configure({
-      heading: {
-        levels: [1, 2, 3, 4, 5, 6],
-      },
-      code: {
-        HTMLAttributes: {
-          class: 'bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 font-mono text-sm',
-        },
-      },
-      codeBlock: {
-        HTMLAttributes: {
-          class: 'bg-gray-100 dark:bg-gray-800 rounded p-4 font-mono text-sm overflow-x-auto',
-        },
-      },
-    }),
-    TiptapImage.configure({
-      inline: true,
-      HTMLAttributes: {
-        class: 'max-w-full h-auto border border-zinc-200 rounded my-4'
-      },
-    }),
-    Link.configure({
-      openOnClick: false,
-      HTMLAttributes: {
-        class: 'text-blue-600 hover:underline cursor-pointer',
-      },
-    }),
-    Youtube.configure({
-      width: 640,
-      height: 360,
-      HTMLAttributes: {
-        class: 'my-4 rounded',
-      },
-    }),
-    Iframe,
-    TaskList.configure({
-      HTMLAttributes: {
-        class: 'task-list',
-      },
-    }),
-    TaskItem.configure({
-      nested: true,
-      HTMLAttributes: {
-        class: 'task-list-item',
-      },
-    }),
-    Table.configure({
-      resizable: true,
-      HTMLAttributes: {
-        class: 'border-collapse table-auto w-full my-4',
-      },
-    }),
-    TableRow,
-    TableHeader.configure({
-      HTMLAttributes: {
-        class: 'border border-gray-300 bg-gray-100 dark:bg-gray-800 px-4 py-2 text-left font-bold',
-      },
-    }),
-    TableCell.configure({
-      HTMLAttributes: {
-        class: 'border border-gray-300 px-4 py-2',
-      },
-    }),
-    // Math nodes
-    MathNode,
-    MathBlockNode,
-    Markdown.configure({
-      html: true,
-      transformPastedText: true,
-      transformCopiedText: true,
-    }),
-  ],
-  editorProps: {
-    attributes: {
-      class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl focus:outline-none min-h-[500px] p-6 border border-zinc-300 dark:border-zinc-700 rounded-b-md bg-white dark:bg-gray-900'
-    },
-    handlePaste: (view, event) => {
-      const text = event.clipboardData?.getData('text/plain')
-      if (text) {
-        const inlineMathRegex = /\$(.+?)\$/g
-        const blockMathRegex = /\$\$(.+?)\$\$/gs
-        if (blockMathRegex.test(text) || inlineMathRegex.test(text)) {
-          return false
-        }
-      }
-      return false
-    },
-  },
-  onUpdate: ({ editor }) => {
-    const markdownContent = editor.storage.markdown.getMarkdown()
-    emit('update:modelValue', markdownContent)
-  }
-})
-
-watch(() => props.modelValue, (val) => {
-  if (editor.value) {
-    const currentContent = editor.value.storage.markdown.getMarkdown()
-    if (currentContent !== val) {
-      editor.value.commands.setContent(val, false)
-    }
-  }
-})
-
-// Trigger image upload (supports multiple files)
-const triggerImageUpload = () => fileInput.value?.click()
-
-// Handle file selection
-const handleFileUpload = (e: Event) => {
-  const files = (e.target as HTMLInputElement).files
-  if (!files || files.length === 0) return
-
-  for (let i = 0; i < files.length; i++) {
-    uploadQueue.value.push({ file: files[i] })
-  }
-
-  if (!isUploading.value) {
-    processQueue()
-  }
-
-  ;(e.target as HTMLInputElement).value = ''
-}
-
-// 处理单个文件（压缩、插入临时图、上传）
-const processSingleFile = async (item: QueueItem): Promise<void> => {
-  let file = item.file
-  if (file.size > 2 * 1024 * 1024) {
-    try {
-      file = await compressImage(file)
-      notify('Large image compressed')
-    } catch (err) {
-      notify('Image compression failed, using original', 'error')
-    }
-  }
-
-  let tempUrl = item.tempUrl
-  if (!tempUrl) {
-    tempUrl = URL.createObjectURL(file)
-    editor.value?.chain().focus().setImage({ src: tempUrl }).run()
-  }
-
-  const targetOwnerId = item.forcedOwnerId !== undefined ? item.forcedOwnerId : props.ownerId
-  const targetOwnerSlug = item.forcedOwnerSlug !== undefined ? item.forcedOwnerSlug : props.ownerSlug
-
-  const isValidId = typeof targetOwnerId === 'number' && targetOwnerId > 0
-
-  if (isValidId) {
-    try {
-      const realUrl = await uploadImage(file, tempUrl, targetOwnerId as number, targetOwnerSlug)
-      replaceImageUrl(tempUrl, realUrl)
-      notify('Image uploaded successfully')
-      emit('image-uploaded')
-    } catch (err) {
-      notify('Image upload failed', 'error')
-      throw err
-    }
-  } else {
-    pendingImages.value.push({ file, tempUrl })
-    notify('Image will be uploaded after saving')
-  }
-}
-
-// 队列处理函数（支持等待）
-const processQueue = async (): Promise<void> => {
-  // 如果已有正在处理的 Promise，直接返回它
-  if (uploadPromise.value) {
-    return uploadPromise.value
-  }
-
-  const run = async () => {
-    if (cancelUpload) {
-      uploadQueue.value = []
-      isUploading.value = false
-      uploadTotal.value = 0
-      uploadCompleted.value = 0
-      currentFileName.value = ''
-      cancelUpload = false
-      return
-    }
-
-    if (uploadQueue.value.length === 0) {
-      isUploading.value = false
-      uploadTotal.value = 0
-      uploadCompleted.value = 0
-      currentFileName.value = ''
-      return
-    }
-
-    isUploading.value = true
-    uploadTotal.value = uploadQueue.value.length
-
-    while (uploadQueue.value.length > 0 && !cancelUpload) {
-      const item = uploadQueue.value[0]
-      currentFileName.value = item.file.name
-      try {
-        await processSingleFile(item)
-        uploadQueue.value.shift()
-        uploadCompleted.value++
-      } catch (error) {
-        console.error('Upload failed:', error)
-        uploadQueue.value.shift()
-        uploadCompleted.value++
-      }
-    }
-
-    if (cancelUpload) {
-      uploadQueue.value = []
-    }
-    isUploading.value = false
-    uploadTotal.value = 0
-    uploadCompleted.value = 0
-    currentFileName.value = ''
-    cancelUpload = false
-    uploadPromise.value = null
-  }
-
-  uploadPromise.value = run()
-  await uploadPromise.value
-}
-
-// 取消上传
-const handleCancelUpload = () => {
-  if (isUploading.value) {
-    cancelUpload = true
-    notify('Upload cancelled', 'info')
-  }
-}
-
-// Upload image
-const uploadImage = async (file: File, tempUrl: string, realOwnerId: number, realOwnerSlug?: string): Promise<string> => {
+// 上传图片到服务器
+const uploadImage = async (file: File, realOwnerId: number, realOwnerSlug?: string): Promise<string> => {
   const formData = new FormData()
   formData.append('file', file)
 
@@ -470,442 +85,233 @@ const uploadImage = async (file: File, tempUrl: string, realOwnerId: number, rea
   return res.url
 }
 
-// Replace image URL
-const replaceImageUrl = (oldUrl: string, newUrl: string) => {
-  if (!editor.value) return
-  const { state } = editor.value
-  const tr = state.tr
-  let replaced = false
-  state.doc.descendants((node, pos) => {
-    if (node.type.name === 'image' && node.attrs.src === oldUrl) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: newUrl })
-      replaced = true
+// md-editor-v3 图片上传回调
+const onUploadImg = async (files: File[], callback: (urls: string[]) => void) => {
+  const ownerIdNum = typeof props.ownerId === 'number' ? props.ownerId : parseInt(props.ownerId)
+  const isValidId = typeof ownerIdNum === 'number' && ownerIdNum > 0
+
+  const uploadedUrls: string[] = []
+
+  for (const file of files) {
+    let processedFile = file
+    if (file.size > 2 * 1024 * 1024) {
+      try {
+        processedFile = await compressImage(file)
+        notify('Large image compressed')
+      } catch (err) {
+        notify('Image compression failed, using original', 'error')
+      }
     }
-  })
-  if (replaced) {
-    editor.value.view.dispatch(tr)
+
+    if (isValidId) {
+      try {
+        const realUrl = await uploadImage(processedFile, ownerIdNum, props.ownerSlug)
+        uploadedUrls.push(realUrl)
+        emit('image-uploaded')
+        notify('Image uploaded successfully')
+      } catch (err) {
+        notify('Image upload failed', 'error')
+        uploadedUrls.push('')
+      }
+    } else {
+      const tempUrl = URL.createObjectURL(processedFile)
+      pendingImages.value.push({ file: processedFile, tempUrl })
+      uploadedUrls.push(tempUrl)
+      notify('Image will be uploaded after saving')
+    }
   }
-  URL.revokeObjectURL(oldUrl)
+
+  callback(uploadedUrls)
 }
 
-// Process pending uploads (called after save) - 现在返回 Promise
-const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
-  if (pendingImages.value.length === 0) return
-
-  for (const pending of pendingImages.value) {
-    uploadQueue.value.push({
-      file: pending.file,
-      tempUrl: pending.tempUrl,
-      forcedOwnerId: realOwnerId,
-      forcedOwnerSlug: realOwnerSlug
-    })
-  }
-  pendingImages.value = []
-
-  await processQueue()
-}
-
-// Add video
+// 插入视频（通过操作 textarea 选区或直接追加）
 const addVideo = () => {
   const input = prompt('Enter video link (YouTube, Bilibili, Vimeo) or iframe code:')
   if (!input) return
 
+  let videoHtml = ''
+
   if (input.trim().startsWith('<iframe')) {
-    const srcMatch = input.match(/src=["'](.*?)["']/)
-    if (srcMatch && srcMatch[1]) {
-      editor.value?.chain().focus().insertContent({
-        type: 'iframe',
-        attrs: { src: srcMatch[1] }
-      }).run()
-    } else {
-      editor.value?.chain().focus().insertContent(input).run()
-    }
-    return
-  }
-
-  const videoInfo = parseVideoUrl(input)
-
-  if (videoInfo) {
-    if (videoInfo.provider === 'youtube') {
-      editor.value?.commands.setYoutubeVideo({ src: input })
-    } else {
-      editor.value?.chain().focus().insertContent({
-        type: 'iframe',
-        attrs: { src: videoInfo.embedUrl }
-      }).run()
-    }
+    videoHtml = input
   } else {
-    notify('Unable to parse video link, please insert the link directly', 'error')
+    const videoInfo = parseVideoUrl(input)
+    if (videoInfo) {
+      videoHtml = `<div class="video-wrapper my-6 rounded-lg overflow-hidden shadow-lg"><iframe src="${videoInfo.embedUrl}" frameborder="0" allowfullscreen class="w-full aspect-video"></iframe></div>`
+    } else {
+      notify('Unable to parse video link, please insert the link directly', 'error')
+      return
+    }
+  }
+
+  // 获取编辑器实例（any 绕过类型检查，实际运行时存在这些方法）
+  const editor = editorRef.value as any
+  if (editor) {
+    // 尝试获取光标位置
+    let cursorPos = -1
+    try {
+      const selection = editor.getSelection?.()
+      cursorPos = selection?.start ?? -1
+    } catch (e) {
+      cursorPos = -1
+    }
+
+    const currentText = props.modelValue
+    let newText = ''
+    if (cursorPos >= 0 && cursorPos <= currentText.length) {
+      newText = currentText.slice(0, cursorPos) + videoHtml + currentText.slice(cursorPos)
+    } else {
+      // 无法获取光标位置时追加到末尾
+      newText = currentText + '\n\n' + videoHtml + '\n\n'
+    }
+    emit('update:modelValue', newText)
+  } else {
+    // 降级：直接追加
+    emit('update:modelValue', props.modelValue + '\n\n' + videoHtml + '\n\n')
   }
 }
 
-// Add table
-const addTable = () => {
-  editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+// 处理暂存图片的上传与替换（使用正则全局替换，兼容低版本浏览器）
+const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
+  if (pendingImages.value.length === 0) return
+
+  isUploading.value = true
+  let completed = 0
+
+  for (const pending of pendingImages.value) {
+    try {
+      const realUrl = await uploadImage(pending.file, realOwnerId, realOwnerSlug)
+      const currentContent = props.modelValue
+      // 使用正则全局替换代替 replaceAll
+      const escapedTempUrl = pending.tempUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(escapedTempUrl, 'g')
+      const newContent = currentContent.replace(regex, realUrl)
+      if (newContent !== currentContent) {
+        emit('update:modelValue', newContent)
+      }
+      URL.revokeObjectURL(pending.tempUrl)
+      completed++
+      uploadProgress.value = (completed / pendingImages.value.length) * 100
+    } catch (err) {
+      notify('Some images failed to upload', 'error')
+    }
+  }
+
+  pendingImages.value = []
+  isUploading.value = false
+  uploadProgress.value = 0
+  emit('image-uploaded')
+  notify('All images uploaded')
 }
 
-// Expose methods
+// 监听外部内容变化，同步编辑器内容
+watch(() => props.modelValue, (val) => {
+  const editor = editorRef.value as any
+  if (editor && editor.getValue && editor.getValue() !== val) {
+    editor.setValue(val)
+  }
+})
+
 defineExpose({
   processPendingUploads
 })
 
-onBeforeUnmount(() => editor.value?.destroy())
+onBeforeUnmount(() => {
+  pendingImages.value.forEach(p => URL.revokeObjectURL(p.tempUrl))
+})
 </script>
 
 <template>
   <div class="editor-container">
-    <!-- Toolbar -->
-    <div class="flex flex-wrap gap-1 p-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-t-md text-sm">
-      <!-- Text formatting -->
-      <button @click="editor?.chain().focus().toggleBold().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('bold') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 font-bold"
-        title="Bold">
-        Bold
-      </button>
-      <button @click="editor?.chain().focus().toggleItalic().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('italic') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 italic"
-        title="Italic">
-        Italic
-      </button>
-      <button @click="editor?.chain().focus().toggleStrike().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('strike') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 line-through"
-        title="Strikethrough">
-        Strikethrough
-      </button>
-
-      <span class="border-r border-zinc-300 dark:border-zinc-600 mx-1"></span>
-
-      <!-- Headings -->
-      <button @click="editor?.chain().focus().toggleHeading({ level: 1 }).run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('heading', { level: 1 }) }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Heading 1">
-        H1
-      </button>
-      <button @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('heading', { level: 2 }) }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Heading 2">
-        H2
-      </button>
-      <button @click="editor?.chain().focus().toggleHeading({ level: 3 }).run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('heading', { level: 3 }) }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Heading 3">
-        H3
-      </button>
-
-      <span class="border-r border-zinc-300 dark:border-zinc-600 mx-1"></span>
-
-      <!-- Lists -->
-      <button @click="editor?.chain().focus().toggleBulletList().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('bulletList') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Bullet List">
-        List
-      </button>
-      <button @click="editor?.chain().focus().toggleOrderedList().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('orderedList') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Ordered List">
-        Numbered
-      </button>
-      <button @click="editor?.chain().focus().toggleTaskList().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('taskList') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Task List">
-        Task
-      </button>
-
-      <span class="border-r border-zinc-300 dark:border-zinc-600 mx-1"></span>
-
-      <!-- Code -->
-      <button @click="editor?.chain().focus().toggleCode().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('code') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 font-mono"
-        title="Inline Code">
-        &lt;/&gt;
-      </button>
-      <button @click="editor?.chain().focus().toggleCodeBlock().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('codeBlock') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Code Block">
-        Code block
-      </button>
-
-      <span class="border-r border-zinc-300 dark:border-zinc-600 mx-1"></span>
-
-      <!-- Media -->
-      <button @click="triggerImageUpload"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Insert Image">
-        Image
-      </button>
-      <button @click="addVideo"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Insert Video">
-        Video
-      </button>
-      <button @click="addTable"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Insert Table">
-        Table
-      </button>
-
-      <!-- Blockquote and horizontal rule -->
-      <button @click="editor?.chain().focus().toggleBlockquote().run()"
-        :class="{ 'bg-zinc-300 dark:bg-zinc-700': editor?.isActive('blockquote') }"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Blockquote">
-        Quote
-      </button>
-      <button @click="editor?.chain().focus().setHorizontalRule().run()"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Horizontal Rule">
-        —
-      </button>
-
-      <!-- Undo/Redo -->
-      <span class="border-r border-zinc-300 dark:border-zinc-600 mx-1"></span>
-      <button @click="editor?.chain().focus().undo().run()"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Undo">
-        ↶
-      </button>
-      <button @click="editor?.chain().focus().redo().run()"
-        class="px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800"
-        title="Redo">
-        ↷
-      </button>
-
-      <input type="file" ref="fileInput" class="hidden" accept="image/*" multiple @change="handleFileUpload" />
-    </div>
+    <MdEditor
+        ref="editorRef"
+        :model-value="modelValue"
+        @update:model-value="(val) => emit('update:modelValue', val)"
+        :toolbars="[
+        0,  // 占位符，用于插入自定义工具栏
+        'bold', 'underline', 'italic', 'strikeThrough', 'title', 'sub', 'sup',
+        'quote', 'unorderedList', 'orderedList', 'task', 'codeRow', 'code',
+        'link', 'image', 'table', 'mermaid', 'katex', 'revoke', 'next',
+        'save', 'pageFullscreen', 'fullscreen', 'preview', 'htmlPreview',
+        'catalog', 'github'
+      ]"
+        :toolbars-exclude="['save']"
+        :editor-id="'md-editor-' + ownerType + ownerId"
+        :preview-theme="'github'"
+        :theme="'light'"
+        :code-theme="'github'"
+        :on-upload-img="onUploadImg"
+        class="border border-zinc-300 dark:border-zinc-700 rounded-md overflow-hidden"
+    >
+      <!-- 自定义工具栏插槽，对应 toolbars 中的 0 占位符 -->
+      <template #defToolbars>
+        <NormalToolbar title="Insert Video" @onClick="addVideo">
+          <template #trigger>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="6" width="20" height="12" rx="2" />
+              <path d="m9 10 4 2-4 2v-4z" />
+            </svg>
+          </template>
+        </NormalToolbar>
+      </template>
+    </MdEditor>
 
     <!-- 上传进度条 -->
     <div v-if="isUploading" class="mt-2 p-2 border border-zinc-200 dark:border-zinc-800 rounded">
       <div class="flex items-center justify-between text-xs mb-1">
-        <span class="text-zinc-600 dark:text-zinc-400">Uploading: {{ currentFileName }}</span>
-        <div class="flex items-center gap-2">
-          <span class="text-zinc-500">{{ uploadCompleted }}/{{ uploadTotal }}</span>
-          <button @click="handleCancelUpload" class="text-red-500 hover:text-red-700 text-xs font-bold">Cancel</button>
-        </div>
+        <span class="text-zinc-600 dark:text-zinc-400">Uploading pending images...</span>
+        <span class="text-zinc-500">{{ Math.round(uploadProgress) }}%</span>
       </div>
       <div class="w-full bg-zinc-200 dark:bg-zinc-700 h-1 rounded overflow-hidden">
-        <div
-          class="h-full bg-blue-600 transition-all duration-300"
-          :style="{ width: `${(uploadCompleted / uploadTotal) * 100}%` }"
-        ></div>
+        <div class="h-full bg-blue-600 transition-all duration-300" :style="{ width: `${uploadProgress}%` }"></div>
       </div>
     </div>
 
-    <!-- Editor area -->
-    <editor-content :editor="editor" class="rounded-b-md" />
-
-    <!-- Math formula quick input hint -->
+    <!-- 数学公式提示 -->
     <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-      <span class="mr-3">💡 Math formulas: inline formulas use <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">$E=mc^2$</code>, block formulas use <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">$$\sum_{i=1}^n i^2$$</code></span>
+      <span class="mr-3">💡 Math formulas: inline $E=mc^2$, block $$\sum_{i=1}^n i^2$$</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Ensure the editor content looks like the final page */
-:deep(.ProseMirror) {
-  outline: none;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+.md-editor-icon-btn {
+  @apply flex items-center justify-center w-8 h-8 rounded-md transition-colors;
+  @apply text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800;
 }
 
-/* Restore reset styles */
-:deep(.ProseMirror h1) {
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin: 1.5rem 0 1rem;
-  line-height: 1.2;
+:deep(.md-editor) {
+  --md-color-bg: #ffffff;
+  --md-color-bg-secondary: #f9fafb;
+  --md-color-border: #e5e7eb;
 }
 
-:deep(.ProseMirror h2) {
-  font-size: 2rem;
-  font-weight: 600;
-  margin: 1.25rem 0 0.75rem;
-  line-height: 1.3;
+.dark :deep(.md-editor) {
+  --md-color-bg: #1f2937;
+  --md-color-bg-secondary: #111827;
+  --md-color-border: #374151;
+  --md-color-text: #f3f4f6;
 }
 
-:deep(.ProseMirror h3) {
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin: 1rem 0 0.5rem;
-  line-height: 1.4;
+:deep(.md-editor-toolbar) {
+  border-bottom: 1px solid var(--md-color-border);
+  background-color: var(--md-color-bg-secondary);
 }
-
-:deep(.ProseMirror p) {
-  margin: 0.75rem 0;
-  line-height: 1.6;
+:deep(.md-editor-preview) {
+  background-color: var(--md-color-bg);
+  color: var(--md-color-text);
 }
-
-:deep(.ProseMirror ul) {
-  list-style-type: disc;
-  padding-left: 2rem;
-  margin: 0.75rem 0;
+:deep(.md-editor-input) {
+  background-color: var(--md-color-bg);
+  color: var(--md-color-text);
 }
-
-:deep(.ProseMirror ol) {
-  list-style-type: decimal;
-  padding-left: 2rem;
-  margin: 0.75rem 0;
-}
-
-:deep(.ProseMirror blockquote) {
-  border-left: 4px solid #e5e7eb;
-  padding-left: 1rem;
-  margin: 1rem 0;
-  font-style: italic;
-  color: #4b5563;
-}
-
-:deep(.ProseMirror code) {
-  background-color: #f3f4f6;
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.4rem;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-:deep(.ProseMirror pre) {
-  background-color: #1f2937;
-  color: #f9fafb;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-  margin: 1rem 0;
-}
-
-:deep(.ProseMirror pre code) {
-  background-color: transparent;
-  color: inherit;
-  padding: 0;
-  font-size: 0.9rem;
-}
-
-:deep(.ProseMirror a) {
-  color: #2563eb;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-:deep(.ProseMirror a:hover) {
-  color: #1d4ed8;
-}
-
-/* Table styles */
-:deep(.ProseMirror table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1rem 0;
-}
-
-:deep(.ProseMirror th) {
-  background-color: #f9fafb;
-  font-weight: 600;
-  border: 1px solid #d1d5db;
-  padding: 0.75rem;
-}
-
-:deep(.ProseMirror td) {
-  border: 1px solid #d1d5db;
-  padding: 0.75rem;
-}
-
-/* Task list styles */
-:deep(.task-list) {
-  list-style: none;
-  padding-left: 0;
-}
-
-:deep(.task-list-item) {
-  display: flex;
-  align-items: flex-start;
-  margin: 0.5rem 0;
-}
-
-:deep(.task-list-item label) {
-  margin-right: 0.75rem;
-  margin-top: 0.25rem;
-}
-
-/* Image styles */
-:deep(.ProseMirror img) {
-  max-width: 100%;
-  height: auto;
-  border-radius: 0.375rem;
-  margin: 1rem 0;
-}
-
-/* Video wrapper */
 :deep(.video-wrapper) {
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;
   margin: 1rem 0;
 }
-
-/* Math formula styles */
-:deep(.math-inline-render) {
-  display: inline-block;
-  vertical-align: middle;
-}
-
-:deep(.math-block-render) {
-  overflow-x: auto;
-  text-align: center;
-}
-
-:deep(.math-inline-error),
-:deep(.math-block-error) {
-  color: #ef4444;
-  background-color: #fee2e2;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-family: monospace;
-}
-
-/* Dark mode adaptations */
-:deep(.dark .ProseMirror) {
-  color: #f3f4f6;
-}
-
-:deep(.dark .ProseMirror blockquote) {
-  border-left-color: #4b5563;
-  color: #9ca3af;
-}
-
-:deep(.dark .ProseMirror code) {
-  background-color: #374151;
-  color: #e5e7eb;
-}
-
-:deep(.dark .ProseMirror pre) {
-  background-color: #111827;
-}
-
-:deep(.dark .ProseMirror th) {
-  background-color: #1f2937;
-  border-color: #374151;
-}
-
-:deep(.dark .ProseMirror td) {
-  border-color: #374151;
-}
-
-:deep(.dark .math-block-render) {
-  background-color: #1f2937;
-}
-
-:deep(.dark .math-inline-error),
-:deep(.dark .math-block-error) {
-  background-color: #7f1d1d;
-  color: #fecaca;
+:deep(.video-wrapper iframe) {
+  width: 100%;
+  aspect-ratio: 16 / 9;
 }
 </style>
