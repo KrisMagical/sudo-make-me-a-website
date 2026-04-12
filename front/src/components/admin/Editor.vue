@@ -124,7 +124,7 @@ const onUploadImg = async (files: File[], callback: (urls: string[]) => void) =>
   callback(uploadedUrls)
 }
 
-// 插入视频（通过操作 textarea 选区或直接追加）
+// 插入视频
 const addVideo = () => {
   const input = prompt('Enter video link (YouTube, Bilibili, Vimeo) or iframe code:')
   if (!input) return
@@ -143,10 +143,8 @@ const addVideo = () => {
     }
   }
 
-  // 获取编辑器实例（any 绕过类型检查，实际运行时存在这些方法）
   const editor = editorRef.value as any
   if (editor) {
-    // 尝试获取光标位置
     let cursorPos = -1
     try {
       const selection = editor.getSelection?.()
@@ -160,17 +158,15 @@ const addVideo = () => {
     if (cursorPos >= 0 && cursorPos <= currentText.length) {
       newText = currentText.slice(0, cursorPos) + videoHtml + currentText.slice(cursorPos)
     } else {
-      // 无法获取光标位置时追加到末尾
       newText = currentText + '\n\n' + videoHtml + '\n\n'
     }
     emit('update:modelValue', newText)
   } else {
-    // 降级：直接追加
     emit('update:modelValue', props.modelValue + '\n\n' + videoHtml + '\n\n')
   }
 }
 
-// 处理暂存图片的上传与替换（使用正则全局替换，兼容低版本浏览器）
+// 处理暂存图片的上传与替换
 const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
   if (pendingImages.value.length === 0) return
 
@@ -181,7 +177,6 @@ const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string
     try {
       const realUrl = await uploadImage(pending.file, realOwnerId, realOwnerSlug)
       const currentContent = props.modelValue
-      // 使用正则全局替换代替 replaceAll
       const escapedTempUrl = pending.tempUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(escapedTempUrl, 'g')
       const newContent = currentContent.replace(regex, realUrl)
@@ -203,7 +198,6 @@ const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string
   notify('All images uploaded')
 }
 
-// 监听外部内容变化，同步编辑器内容
 watch(() => props.modelValue, (val) => {
   const editor = editorRef.value as any
   if (editor && editor.getValue && editor.getValue() !== val) {
