@@ -17,6 +17,7 @@ public interface PageMapper {
     @Mapping(target = "hasChildren", ignore = true)
     @Mapping(target = "createdAt", source = "createdAt")
     @Mapping(target = "updatedAt", source = "updatedAt")
+    @Mapping(target = "excerpt", expression = "java(page.getContent() != null && page.getContent().length() > 150 ? page.getContent().substring(0, 150) + \"...\" : page.getContent())")
     PageSummaryDto toSummaryDto(Page page);
 
     @Mapping(target = "id", ignore = true)

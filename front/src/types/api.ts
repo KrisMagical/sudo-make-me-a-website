@@ -96,6 +96,7 @@ export interface PageSummaryDto {
   title: string;
   parentId: number | null;
   hasChildren: boolean;
+  excerpt?: string;
   createdAt: string;
   updatedAt: string;
 }

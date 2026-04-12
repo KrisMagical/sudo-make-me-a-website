@@ -18,6 +18,7 @@ public class PageSummaryDto {
     private String title;
     private Long parentId;
     private Boolean hasChildren;
+    private String excerpt;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

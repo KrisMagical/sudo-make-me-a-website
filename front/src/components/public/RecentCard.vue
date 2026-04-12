@@ -7,13 +7,20 @@ type RecentItem = (PostSummaryDto | PageSummaryDto) & { type: 'post' | 'page' }
 const props = defineProps<{ item: RecentItem }>()
 
 const displayExcerpt = computed(() => {
-  if (props.item.type !== 'post') return ''
-  const post = props.item as PostSummaryDto
-  if (!post.excerpt) return ''
+  let excerpt = ''
+  if (props.item.type === 'post') {
+    excerpt = (props.item as PostSummaryDto).excerpt || ''
+  } else {
+    excerpt = (props.item as PageSummaryDto).excerpt || ''
+  }
+  if (!excerpt) return ''
+  return excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+})
 
-  // 移除 Markdown 图片语法
-  const cleaned = post.excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
-  return cleaned.trim() ? cleaned : post.excerpt
+const categoryDisplay = computed(() => {
+  return props.item.type === 'post'
+      ? (props.item as PostSummaryDto).categoryName || 'Post'
+      : 'Page'
 })
 </script>
 
@@ -21,7 +28,7 @@ const displayExcerpt = computed(() => {
   <article class="group border border-zinc-200 dark:border-zinc-600 hover:border-zinc-400 dark:hover:border-zinc-500 hover:shadow-md transition-all p-6 bg-white dark:bg-zinc-950 flex flex-col h-full">
     <div class="flex items-start justify-between mb-3">
       <div class="text-xs font-mono text-zinc-500 uppercase tracking-tighter">
-        {{ item.type === 'post' ? item.categoryName || 'Post' : 'Page' }}
+        {{ categoryDisplay }}
       </div>
       <div class="text-xs text-zinc-400 font-mono">
         {{ new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
@@ -34,13 +41,14 @@ const displayExcerpt = computed(() => {
       </h3>
     </router-link>
 
+    <!-- 统一显示摘要（Post 和 Page 都有 excerpt 字段） -->
     <p
-      v-if="item.type === 'post' && displayExcerpt"
-      class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
-      v-html="displayExcerpt"
+        v-if="displayExcerpt"
+        class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
+        v-html="displayExcerpt"
     />
 
-    <!-- 底部区域：左侧统计/图标，右侧 Read → -->
+    <!-- 底部区域 -->
     <div class="flex items-center justify-between text-xs text-zinc-500 mt-auto pt-4">
       <div v-if="item.type === 'post'" class="flex items-center space-x-4">
         <span class="flex items-center gap-1 text-green-600 dark:text-green-400">
@@ -56,8 +64,8 @@ const displayExcerpt = computed(() => {
       </div>
 
       <router-link
-        :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`"
-        class="font-bold uppercase tracking-tighter hover:underline"
+          :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`"
+          class="font-bold uppercase tracking-tighter hover:underline"
       >
         Read →
       </router-link>
