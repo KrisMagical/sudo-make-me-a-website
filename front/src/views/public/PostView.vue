@@ -5,14 +5,14 @@ import { publicApi } from '@/api/public'
 import SmartContent from '@/components/public/SmartContent.vue'
 import CommentForm from '@/components/public/CommentForm.vue'
 import CommentNode from '@/components/public/CommentNode.vue'
-import type { CommentDto } from '@/types/api'
+import type { CommentDto, PostDetailDto, LikeResponseDto } from '@/types/api'
 
 const route = useRoute()
 
-const post = ref<any>(null)
+const post = ref<PostDetailDto | null>(null)
 const comments = ref<CommentDto[]>([])
 const replyingTo = ref<number | undefined>()
-const displayCount = ref(0)                 // 实际显示的评论数量
+const displayCount = ref(0)
 
 const COLLAPSE_THRESHOLD = 15
 
@@ -20,13 +20,13 @@ const COLLAPSE_THRESHOLD = 15
 const loadData = async () => {
   try {
     const slug = route.params.slug as string
-    post.value = await publicApi.getPost(slug)
-    comments.value = await publicApi.getComments(post.value.id)
+    post.value = (await publicApi.getPost(slug)) as unknown as PostDetailDto
+    comments.value = (await publicApi.getComments(post.value!.id)) as unknown as CommentDto[]
 
     // 初始化显示数量：若评论数超过阈值则只显示前15条，否则显示全部
     displayCount.value = comments.value.length > COLLAPSE_THRESHOLD
-      ? COLLAPSE_THRESHOLD
-      : comments.value.length
+        ? COLLAPSE_THRESHOLD
+        : comments.value.length
   } catch (error) {
     console.error('Failed to load post data', error)
   }
@@ -36,7 +36,7 @@ const loadData = async () => {
 const handleLike = async (positive: boolean) => {
   if (!post.value) return
   try {
-    const res = await publicApi.likePost(post.value.id, positive)
+    const res = (await publicApi.likePost(post.value.id, positive)) as unknown as LikeResponseDto
     post.value.likeCount = res.likes
     post.value.dislikeCount = res.dislikes
   } catch (error: any) {
@@ -53,7 +53,7 @@ const replyTo = (commentId?: number) => {
 // 评论按创建时间排序（所有评论扁平展示）
 const sortedComments = computed(() => {
   return [...comments.value].sort((a, b) =>
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   )
 })
 
@@ -76,89 +76,113 @@ onMounted(loadData)
 </script>
 
 <template>
-  <article v-if="post" class="max-w-2xl mx-auto py-12 px-4">
-    <!-- 文章头部 -->
-    <header class="mb-8 border-b border-zinc-100 dark:border-zinc-800 pb-8">
-      <h1 class="text-3xl font-bold tracking-tighter mb-4">{{ post.title }}</h1>
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-mono uppercase tracking-tighter text-zinc-500 dark:text-zinc-400">
-        <span class="text-zinc-800 dark:text-zinc-200 font-bold">POST / {{ post.categoryName }}</span>
-        <span class="text-zinc-300 dark:text-zinc-700">|</span>
-        <span>VIEWS: {{ post.viewCount }}</span>
-        <span class="text-zinc-300 dark:text-zinc-700">|</span>
-        <span>CREATED: {{ new Date(post.createdAt).toLocaleDateString() }}</span>
-        <template v-if="post.updatedAt && post.updatedAt !== post.createdAt">
-          <span class="text-zinc-300 dark:text-zinc-700">|</span>
-          <span class="text-zinc-400 dark:text-zinc-500">UPDATED: {{ new Date(post.updatedAt).toLocaleDateString() }}</span>
-        </template>
+  <article v-if="post" class="max-w-3xl mx-auto py-12 px-4 md:px-6">
+    <header class="mb-12 border-b border-zinc-200 dark:border-zinc-800 pb-8">
+      <h1 class="text-3xl md:text-4xl font-black tracking-tighter mb-6">{{ post.title }}</h1>
+
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-mono text-zinc-600 dark:text-zinc-400">
+        <!-- 分类 -->
+        <span class="inline-flex items-center gap-1.5">
+          <span class="i-carbon-tag w-3.5 h-3.5"></span>
+          <span class="font-bold text-zinc-800 dark:text-zinc-200">{{ post.categoryName }}</span>
+        </span>
+
+        <!-- 合集（如果有） -->
+        <span v-if="post.collectionNames && post.collectionNames.length > 0" class="inline-flex items-center gap-1.5">
+          <span class="i-carbon-folder w-3.5 h-3.5"></span>
+          <span>{{ post.collectionNames.join(', ') }}</span>
+        </span>
+
+        <!-- 浏览量 -->
+        <span class="inline-flex items-center gap-1.5">
+          <span class="i-carbon-view w-3.5 h-3.5"></span>
+          <span>{{ post.viewCount }} views</span>
+        </span>
+
+        <!-- 创建日期 -->
+        <span class="inline-flex items-center gap-1.5">
+          <span class="i-carbon-calendar w-3.5 h-3.5"></span>
+          <span>created {{ new Date(post.createdAt).toLocaleDateString() }}</span>
+        </span>
+
+        <!-- 更新日期（如果不同） -->
+        <span v-if="post.updatedAt && post.updatedAt !== post.createdAt" class="inline-flex items-center gap-1.5">
+          <span class="i-carbon-edit w-3.5 h-3.5"></span>
+          <span>updated {{ new Date(post.updatedAt).toLocaleDateString() }}</span>
+        </span>
       </div>
     </header>
 
-    <!-- 文章内容 -->
-    <SmartContent :content="post.content" class="mb-12 text-lg" />
+    <SmartContent :content="post.content" class="prose prose-zinc dark:prose-invert max-w-none mb-12 text-base leading-relaxed" />
 
-    <!-- 点赞/踩区域 -->
-    <div class="flex items-center gap-6 border-y border-zinc-100 dark:border-zinc-800 py-6 mb-12">
+    <div class="flex items-center gap-6 border-t border-zinc-200 dark:border-zinc-800 pt-6 mb-12">
       <button
-        @click="handleLike(true)"
-        class="flex items-center gap-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+          @click="handleLike(true)"
+          class="flex items-center gap-2 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-mono"
       >
-        <div class="i-carbon-thumbs-up w-5 h-5" />
-        <span>Like</span> {{ post.likeCount }}
+        <span class="i-carbon-thumbs-up w-4 h-4 text-green-600 dark:text-green-400"></span>
+        <span>Like</span>
+        <span class="ml-1 font-bold">{{ post.likeCount }}</span>
       </button>
       <button
-        @click="handleLike(false)"
-        class="flex items-center gap-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+          @click="handleLike(false)"
+          class="flex items-center gap-2 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-mono"
       >
-        <div class="i-carbon-thumbs-down w-5 h-5" />
-        <span>Dislike</span> {{ post.dislikeCount }}
+        <span class="i-carbon-thumbs-down w-4 h-4 text-red-600 dark:text-red-400"></span>
+        <span>Dislike</span>
+        <span class="ml-1 font-bold">{{ post.dislikeCount }}</span>
       </button>
     </div>
 
-    <!-- 评论区 -->
-    <section id="comments-section">
-      <div class="flex items-center justify-between mb-6">
-        <h3 class="text-sm font-bold uppercase tracking-widest">Comments ({{ comments.length }})</h3>
-      </div>
+    <section id="comments-section" class="mt-12">
+      <h3 class="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-6 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+        Comments ({{ comments.length }})
+      </h3>
 
-      <!-- 评论列表（只显示前 displayCount 条） -->
       <div class="space-y-6 mb-12">
         <template v-for="comment in visibleComments" :key="comment.id">
           <CommentNode
-            :comment="comment"
-            :all-comments="comments"
-            @reply="replyTo"
+              :comment="comment"
+              :all-comments="comments"
+              @reply="replyTo"
           />
-          <!-- 分隔线 -->
-          <div
-            v-if="comment !== visibleComments[visibleComments.length - 1]"
-            class="border-t border-zinc-100 dark:border-zinc-800"
-          />
+          <div v-if="comment !== visibleComments[visibleComments.length - 1]" class="border-t border-zinc-100 dark:border-zinc-800" />
         </template>
-        <div v-if="comments.length === 0" class="text-sm text-zinc-400 italic">
+        <div v-if="comments.length === 0" class="text-sm text-zinc-400 italic text-center py-8">
           No comments yet. Be the first to share your thoughts!
         </div>
       </div>
 
-      <!-- 展示剩下评论的按钮（仅当评论数超过阈值且尚未显示全部时显示） -->
       <div v-if="showLoadMore" class="text-center py-4 mb-8">
         <button
-          @click="loadAllComments"
-          class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
+            @click="loadAllComments"
+            class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
         >
-          <div class="i-carbon-chevron-down w-4 h-4" />
+          <span class="i-carbon-chevron-down w-4 h-4"></span>
           <span>Show {{ comments.length - displayCount }} more comments</span>
         </button>
       </div>
 
-      <!-- 评论表单 -->
-      <div id="comment-form" class="scroll-mt-20">
+      <div id="comment-form" class="scroll-mt-20 mt-8">
         <CommentForm
-          :post-id="post.id"
-          :parent-id="replyingTo"
-          @success="loadData"
-          @cancel="replyTo(undefined)"
+            :post-id="post.id"
+            :parent-id="replyingTo"
+            @success="loadData"
+            @cancel="replyTo(undefined)"
         />
       </div>
     </section>
   </article>
 </template>
+
+<style scoped>
+.prose pre {
+  @apply bg-zinc-100 dark:bg-zinc-800 rounded-md p-4 overflow-x-auto;
+}
+.prose code {
+  @apply font-mono text-sm;
+}
+.prose blockquote {
+  @apply border-l-4 border-zinc-300 dark:border-zinc-700 pl-4 italic text-zinc-600 dark:text-zinc-400;
+}
+</style>

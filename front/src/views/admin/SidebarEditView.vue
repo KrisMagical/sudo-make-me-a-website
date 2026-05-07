@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { sidebarApi } from '@/api/sidebar'
-import type { SiteConfigDto, BrowserIconDto, ImageDto } from '@/types/api'
+import type { SiteConfigDto, BrowserIconDto } from '@/types/api'
 import { notify } from '@/utils/feedback'
 
 const loading = ref(false)
@@ -17,11 +17,12 @@ const siteAvatarFileInput = ref<HTMLInputElement | null>(null)
 const faviconFileInput = ref<HTMLInputElement | null>(null)
 const appleTouchIconFileInput = ref<HTMLInputElement | null>(null)
 
-// 网站配置表单
-const siteConfigForm = ref({
+// 网站配置表单（初始包含 id，后续从服务端获取后覆盖）
+const siteConfigForm = ref<SiteConfigDto>({
+  id: 0,
   siteName: '',
   authorName: '',
-  siteAvatarImageId: null as number | null,
+  siteAvatarImageId: null,
   siteAvatarUrl: '',
   footerText: '',
   metaDescription: '',
@@ -31,10 +32,11 @@ const siteConfigForm = ref({
 })
 
 // 浏览器图标表单
-const browserIconForm = ref({
-  faviconImageId: null as number | null,
+const browserIconForm = ref<BrowserIconDto>({
+  id: 0,
+  faviconImageId: null,
   faviconUrl: '',
-  appleTouchIconImageId: null as number | null,
+  appleTouchIconImageId: null,
   appleTouchIconUrl: '',
   isActive: true
 })
@@ -241,7 +243,9 @@ const deleteAppleTouchIcon = async () => {
   notify('Apple touch icon removed', 'success')
 }
 
-onMounted(loadData)
+onMounted(() => {
+  void loadData()
+})
 </script>
 
 <template>
@@ -268,10 +272,10 @@ onMounted(loadData)
               Site Name
             </label>
             <input
-              v-model="siteConfigForm.siteName"
-              type="text"
-              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-              placeholder="My Blog"
+                v-model="siteConfigForm.siteName"
+                type="text"
+                class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+                placeholder="My Blog"
             />
           </div>
 
@@ -280,10 +284,10 @@ onMounted(loadData)
               Author Name
             </label>
             <input
-              v-model="siteConfigForm.authorName"
-              type="text"
-              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-              placeholder="John Doe"
+                v-model="siteConfigForm.authorName"
+                type="text"
+                class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+                placeholder="John Doe"
             />
           </div>
 
@@ -294,10 +298,10 @@ onMounted(loadData)
             <div class="flex items-center gap-4">
               <div class="w-16 h-16 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                 <img
-                  v-if="siteAvatarPreview"
-                  :src="siteAvatarPreview"
-                  alt="Site Avatar"
-                  class="w-full h-full object-cover"
+                    v-if="siteAvatarPreview"
+                    :src="siteAvatarPreview"
+                    alt="Site Avatar"
+                    class="w-full h-full object-cover"
                 />
                 <div v-else class="text-2xl text-zinc-400">
                   {{ siteConfigForm.siteName?.charAt(0) || 'A' }}
@@ -306,15 +310,15 @@ onMounted(loadData)
               <div class="flex-1 space-y-2">
                 <div class="flex gap-2">
                   <button
-                    @click="siteAvatarFileInput?.click()"
-                    class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
+                      @click="siteAvatarFileInput?.click()"
+                      class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
                   >
                     Upload Avatar
                   </button>
                   <button
-                    v-if="siteAvatarPreview"
-                    @click="deleteSiteAvatar"
-                    class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
+                      v-if="siteAvatarPreview"
+                      @click="deleteSiteAvatar"
+                      class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
                   >
                     Remove
                   </button>
@@ -324,11 +328,11 @@ onMounted(loadData)
                 </p>
               </div>
               <input
-                type="file"
-                ref="siteAvatarFileInput"
-                class="hidden"
-                accept="image/*"
-                @change="handleSiteAvatarFileChange"
+                  type="file"
+                  ref="siteAvatarFileInput"
+                  class="hidden"
+                  accept="image/*"
+                  @change="handleSiteAvatarFileChange"
               />
             </div>
           </div>
@@ -338,10 +342,10 @@ onMounted(loadData)
               Footer Text
             </label>
             <textarea
-              v-model="siteConfigForm.footerText"
-              rows="2"
-              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-              placeholder="Additional footer text"
+                v-model="siteConfigForm.footerText"
+                rows="2"
+                class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+                placeholder="Additional footer text"
             ></textarea>
           </div>
 
@@ -350,17 +354,17 @@ onMounted(loadData)
               Meta Description
             </label>
             <textarea
-              v-model="siteConfigForm.metaDescription"
-              rows="2"
-              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-              placeholder="Site description for SEO"
+                v-model="siteConfigForm.metaDescription"
+                rows="2"
+                class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+                placeholder="Site description for SEO"
             ></textarea>
           </div>
 
           <button
-            @click="updateSiteConfig"
-            :disabled="saving"
-            class="w-full px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+              @click="updateSiteConfig"
+              :disabled="saving"
+              class="w-full px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
           >
             {{ saving ? 'Saving...' : 'Update Site Config' }}
           </button>
@@ -382,25 +386,25 @@ onMounted(loadData)
             <div class="flex items-center gap-4">
               <div class="w-12 h-12 rounded overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                 <img
-                  v-if="faviconPreview"
-                  :src="faviconPreview"
-                  alt="Favicon"
-                  class="w-full h-full object-contain"
+                    v-if="faviconPreview"
+                    :src="faviconPreview"
+                    alt="Favicon"
+                    class="w-full h-full object-contain"
                 />
                 <div v-else class="text-sm text-zinc-400">F</div>
               </div>
               <div class="flex-1 space-y-2">
                 <div class="flex gap-2">
                   <button
-                    @click="faviconFileInput?.click()"
-                    class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
+                      @click="faviconFileInput?.click()"
+                      class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
                   >
                     Upload Favicon
                   </button>
                   <button
-                    v-if="faviconPreview"
-                    @click="deleteFavicon"
-                    class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
+                      v-if="faviconPreview"
+                      @click="deleteFavicon"
+                      class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
                   >
                     Remove
                   </button>
@@ -410,11 +414,11 @@ onMounted(loadData)
                 </p>
               </div>
               <input
-                type="file"
-                ref="faviconFileInput"
-                class="hidden"
-                accept="image/*"
-                @change="handleFaviconFileChange"
+                  type="file"
+                  ref="faviconFileInput"
+                  class="hidden"
+                  accept="image/*"
+                  @change="handleFaviconFileChange"
               />
             </div>
           </div>
@@ -427,25 +431,25 @@ onMounted(loadData)
             <div class="flex items-center gap-4">
               <div class="w-16 h-16 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                 <img
-                  v-if="appleTouchIconPreview"
-                  :src="appleTouchIconPreview"
-                  alt="Apple Touch Icon"
-                  class="w-full h-full object-contain"
+                    v-if="appleTouchIconPreview"
+                    :src="appleTouchIconPreview"
+                    alt="Apple Touch Icon"
+                    class="w-full h-full object-contain"
                 />
                 <div v-else class="text-sm text-zinc-400">A</div>
               </div>
               <div class="flex-1 space-y-2">
                 <div class="flex gap-2">
                   <button
-                    @click="appleTouchIconFileInput?.click()"
-                    class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
+                      @click="appleTouchIconFileInput?.click()"
+                      class="px-3 py-1 border border-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-sm"
                   >
                     Upload Apple Icon
                   </button>
                   <button
-                    v-if="appleTouchIconPreview"
-                    @click="deleteAppleTouchIcon"
-                    class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
+                      v-if="appleTouchIconPreview"
+                      @click="deleteAppleTouchIcon"
+                      class="px-3 py-1 border border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
                   >
                     Remove
                   </button>
@@ -455,21 +459,21 @@ onMounted(loadData)
                 </p>
               </div>
               <input
-                type="file"
-                ref="appleTouchIconFileInput"
-                class="hidden"
-                accept="image/*"
-                @change="handleAppleTouchIconFileChange"
+                  type="file"
+                  ref="appleTouchIconFileInput"
+                  class="hidden"
+                  accept="image/*"
+                  @change="handleAppleTouchIconFileChange"
               />
             </div>
           </div>
 
           <div class="flex items-center gap-2">
             <input
-              v-model="browserIconForm.isActive"
-              type="checkbox"
-              id="iconActive"
-              class="w-4 h-4"
+                v-model="browserIconForm.isActive"
+                type="checkbox"
+                id="iconActive"
+                class="w-4 h-4"
             />
             <label for="iconActive" class="text-sm text-zinc-500">
               Enable browser icons
@@ -477,9 +481,9 @@ onMounted(loadData)
           </div>
 
           <button
-            @click="updateBrowserIcon"
-            :disabled="saving"
-            class="w-full px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+              @click="updateBrowserIcon"
+              :disabled="saving"
+              class="w-full px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
           >
             {{ saving ? 'Saving...' : 'Save Browser Icons' }}
           </button>

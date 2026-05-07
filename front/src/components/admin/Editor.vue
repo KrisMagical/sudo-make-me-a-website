@@ -10,9 +10,8 @@ import type { ImageDto } from '@/types/api'
 
 const props = defineProps<{
   modelValue: string,
-  ownerType: 'POST' | 'PAGE' | 'HOME',
-  ownerId: string | number,
-  ownerSlug?: string
+  ownerType: 'POST' | 'HOME',
+  ownerId: string | number
 }>()
 
 const emit = defineEmits(['update:modelValue', 'image-uploaded'])
@@ -65,16 +64,13 @@ const compressImage = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 
 }
 
 // 上传图片到服务器
-const uploadImage = async (file: File, realOwnerId: number, realOwnerSlug?: string): Promise<string> => {
+const uploadImage = async (file: File, realOwnerId: number): Promise<string> => {
   const formData = new FormData()
   formData.append('file', file)
 
   let url = ''
   if (props.ownerType === 'POST') {
     url = `/api/posts/${realOwnerId}/images`
-  } else if (props.ownerType === 'PAGE') {
-    if (!realOwnerSlug) throw new Error('ownerSlug required for PAGE')
-    url = `/api/pages/${realOwnerSlug}/images`
   } else {
     url = '/api/home/images'
   }
@@ -105,7 +101,7 @@ const onUploadImg = async (files: File[], callback: (urls: string[]) => void) =>
 
     if (isValidId) {
       try {
-        const realUrl = await uploadImage(processedFile, ownerIdNum, props.ownerSlug)
+        const realUrl = await uploadImage(processedFile, ownerIdNum)
         uploadedUrls.push(realUrl)
         emit('image-uploaded')
         notify('Image uploaded successfully')
@@ -167,7 +163,7 @@ const addVideo = () => {
 }
 
 // 处理暂存图片的上传与替换
-const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string) => {
+const processPendingUploads = async (realOwnerId: number) => {
   if (pendingImages.value.length === 0) return
 
   isUploading.value = true
@@ -175,7 +171,7 @@ const processPendingUploads = async (realOwnerId: number, realOwnerSlug?: string
 
   for (const pending of pendingImages.value) {
     try {
-      const realUrl = await uploadImage(pending.file, realOwnerId, realOwnerSlug)
+      const realUrl = await uploadImage(pending.file, realOwnerId)
       const currentContent = props.modelValue
       const escapedTempUrl = pending.tempUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(escapedTempUrl, 'g')
@@ -219,9 +215,9 @@ onBeforeUnmount(() => {
     <MdEditor
         ref="editorRef"
         :model-value="modelValue"
-        @update:model-value="(val) => emit('update:modelValue', val)"
+        @update:model-value="(val: string) => emit('update:modelValue', val)"
         :toolbars="[
-        0,  // 占位符，用于插入自定义工具栏
+        0,
         'bold', 'underline', 'italic', 'strikeThrough', 'title', 'sub', 'sup',
         'quote', 'unorderedList', 'orderedList', 'task', 'codeRow', 'code',
         'link', 'image', 'table', 'mermaid', 'katex', 'revoke', 'next',
@@ -236,7 +232,6 @@ onBeforeUnmount(() => {
         :on-upload-img="onUploadImg"
         class="border border-zinc-300 dark:border-zinc-700 rounded-md overflow-hidden"
     >
-      <!-- 自定义工具栏插槽，对应 toolbars 中的 0 占位符 -->
       <template #defToolbars>
         <NormalToolbar title="Insert Video" @onClick="addVideo">
           <template #trigger>
@@ -249,7 +244,6 @@ onBeforeUnmount(() => {
       </template>
     </MdEditor>
 
-    <!-- 上传进度条 -->
     <div v-if="isUploading" class="mt-2 p-2 border border-zinc-200 dark:border-zinc-800 rounded">
       <div class="flex items-center justify-between text-xs mb-1">
         <span class="text-zinc-600 dark:text-zinc-400">Uploading pending images...</span>
@@ -260,7 +254,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 数学公式提示 -->
     <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
       <span class="mr-3">💡 Math formulas: inline $E=mc^2$, block $$\sum_{i=1}^n i^2$$</span>
     </div>

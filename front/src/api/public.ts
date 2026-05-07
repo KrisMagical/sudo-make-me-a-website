@@ -1,26 +1,27 @@
 import request from '@/utils/request';
 import type {
- PostDetailDto, PostSummaryDto, PageDto, PageSummaryDto,
-   HomeProfileDto, CategoryDto, CommentDto,
-   CreateCommentRequest, LikeResponseDto
+    PostDetailDto, PostSummaryDto,
+    HomeProfileDto, CategoryDto, CommentDto,
+    CreateCommentRequest, LikeResponseDto, PageResponse
 } from '@/types/api';
 
 export const publicApi = {
-  // 内容获取
-  getHome: () => request.get<HomeProfileDto>('/api/home'),
-  getPost: (slug: string) => request.get<PostDetailDto>(`/api/posts/${slug}`),
-  getPage: (slug: string) => request.get<PageDto>(`/api/pages/${slug}`),
-  getCategories: () => request.get<CategoryDto[]>('/api/categories'),
-  getRecentPosts: (limit = 6) => request.get<PostSummaryDto[]>('/api/posts/recent', { params: { limit } }),
-  getRecentPages: (limit = 6) => request.get<PageSummaryDto[]>('/api/pages/recent', { params: { limit } }),
-  getPostsByCategory: (slug: string, page = 0, size = 10) => request.get<PageResponse<PostSummaryDto>>(`/api/posts/category/${slug}`, {params: { page, size }}),
-  searchPosts: (q: string, options?: { signal?: AbortSignal }) => request.get<PostSummaryDto[]>('/api/posts/searchPages', { params: { q }, ...options }),
-  searchPages: (q: string, options?: { signal?: AbortSignal }) => request.get<PostSummaryDto[]>('/api/pages/searchPages', { params: { q }, ...options }),
+    // 内容获取
+    getHome: () => request.get<HomeProfileDto>('/api/home'),
+    getPost: (slug: string) => request.get<PostDetailDto>(`/api/posts/${slug}`),
+    getCategories: () => request.get<CategoryDto[]>('/api/categories'),
+    getRecentPosts: (limit = 6) => request.get<PostSummaryDto[]>('/api/posts/recent', {params: {limit}}),
+    getPostsByCategory: (slug: string, page = 0, size = 10) =>
+        request.get<PageResponse<PostSummaryDto>>(`/api/posts/category/${slug}`, {params: {page, size}}),
+    searchPostsByCategory: (slug: string, q: string, page = 0, size = 10) =>
+        request.get<PageResponse<PostSummaryDto>>(`/api/posts/category/${slug}/search`, {params: {q, page, size}}),
+    searchPosts: (q: string, options?: { signal?: AbortSignal }) =>
+        request.get<PostSummaryDto[]>('/api/posts/searchPages', {params: {q}, ...options}),
 
-  // 交互功能
-  likePost: (postId: number, positive: boolean) =>
-    request.post<LikeResponseDto>(`/api/posts/${postId}/like`, null, { params: { positive } }),
-  getComments: (postId: number) => request.get<CommentDto[]>(`/api/comments/post/${postId}`),
-  addComment: (postId: number, data: CreateCommentRequest) =>
-    request.post<CommentDto>(`/api/comments/post/${postId}`, data)
+    // 交互功能
+    likePost: (postId: number, positive: boolean) =>
+        request.post<LikeResponseDto>(`/api/posts/${postId}/like`, null, {params: {positive}}),
+    getComments: (postId: number) => request.get<CommentDto[]>(`/api/comments/post/${postId}`),
+    addComment: (postId: number, data: CreateCommentRequest) =>
+        request.post<CommentDto>(`/api/comments/post/${postId}`, data)
 };

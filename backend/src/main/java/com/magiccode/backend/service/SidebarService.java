@@ -1,12 +1,10 @@
 package com.magiccode.backend.service;
 
 import com.magiccode.backend.dto.BrowserIconDto;
-import com.magiccode.backend.dto.CategoryDto;
 import com.magiccode.backend.dto.SidebarDto;
 import com.magiccode.backend.dto.SiteConfigDto;
 import com.magiccode.backend.mapping.BrowserIconMapper;
 import com.magiccode.backend.mapping.CategoryMapper;
-import com.magiccode.backend.mapping.SidebarMapper;
 import com.magiccode.backend.mapping.SiteConfigMapper;
 import com.magiccode.backend.model.*;
 import com.magiccode.backend.repository.*;
@@ -16,16 +14,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Data
 @Transactional
 public class SidebarService {
-    private final SidebarMapper sidebarMapper;
     private final SiteConfigRepository siteConfigRepository;
-    private final PageRepository pageRepository;
     private final CategoryRepository categoryRepository;
     private final BrowserIconRepository browserIconRepository;
     private final SiteConfigMapper siteConfigMapper;
@@ -40,10 +35,6 @@ public class SidebarService {
                         .authorName("作者")
                         .build());
 
-        List<Page> allPages = pageRepository.findAll().stream()
-                .filter(page -> !"00100000".equals(page.getSlug()))
-                .collect(Collectors.toList());
-
         List<Category> categories = categoryRepository.findAll();
 
         BrowserIcon browserIcon = browserIconRepository.findByIsActiveTrue()
@@ -54,14 +45,9 @@ public class SidebarService {
 
         BrowserIconDto browserIconDto = buildBrowserIconDto(browserIcon);
 
-        List<CategoryDto> categoryDtos = categories.stream()
-                .map(categoryMapper::toCategoryDto)
-                .toList();
-
         return SidebarDto.builder()
                 .siteConfig(siteConfigDto)
-                .pages(sidebarMapper.buildPageTree(allPages))
-                .categories(categoryDtos)
+                .categories(categories.stream().map(categoryMapper::toCategoryDto).toList())
                 .browserIcon(browserIconDto)
                 .build();
     }

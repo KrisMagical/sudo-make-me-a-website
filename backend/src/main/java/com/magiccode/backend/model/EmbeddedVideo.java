@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 @Builder
 public class EmbeddedVideo {
     public enum OwnerType {
-        POST, PAGE, HOME
+        POST, HOME
     }
 
     @Id
@@ -45,7 +45,7 @@ public class EmbeddedVideo {
     @Column(nullable = false, length = 3000)
     private String embedUrl;
 
-    @Column(nullable = true, length = 2000)
+    @Column(length = 2000)
     private String title;
 
     @Column(name = "order_index", nullable = false)

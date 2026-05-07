@@ -62,8 +62,8 @@ const scrollToComment = (commentId: number) => {
     <div class="flex flex-col gap-3">
       <!-- 引用块 -->
       <div
-        v-if="comment.parentId && quotedComment()"
-        class="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 border border-zinc-200 dark:border-zinc-600"
+          v-if="comment.parentId && quotedComment()"
+          class="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 border border-zinc-200 dark:border-zinc-600"
       >
         <div class="flex items-center gap-2 mb-2">
           <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
@@ -73,17 +73,16 @@ const scrollToComment = (commentId: number) => {
         </div>
 
         <button
-          v-if="quotedComment()!.exists"
-          @click="scrollToComment(comment.parentId!)"
-          class="w-full text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-2 py-1 -mx-2 -my-1 transition-colors"
+            v-if="quotedComment()!.exists"
+            @click="scrollToComment(comment.parentId!)"
+            class="w-full text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded px-2 py-1 -mx-2 -my-1 transition-colors"
         >
-          <div class="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+          <span class="block text-xs font-bold text-zinc-800 dark:text-zinc-200">
             @{{ quotedComment()!.name }}
-          </div>
-          <!-- 父评论内容添加 break-words -->
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-1 break-words">
+          </span>
+          <span class="block text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-1 break-words">
             {{ quotedComment()!.content }}
-          </p>
+          </span>
         </button>
 
         <div v-else class="px-2 py-1 text-sm text-zinc-400 italic break-words">
@@ -97,8 +96,8 @@ const scrollToComment = (commentId: number) => {
             {{ comment.name }} said
           </span>
           <span
-            v-if="comment.author"
-            class="text-[10px] font-bold uppercase bg-black text-white px-1.5 py-0.5 rounded"
+              v-if="comment.author"
+              class="text-[10px] font-bold uppercase bg-black text-white px-1.5 py-0.5 rounded"
           >
             Author
           </span>
@@ -109,14 +108,14 @@ const scrollToComment = (commentId: number) => {
         <div class="flex items-center gap-2">
           <slot name="actions" :comment="comment" />
           <button
-            @click="emit('reply', comment.id)"
-            class="text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              @click="emit('reply', comment.id)"
+              class="text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             Reply
           </button>
         </div>
       </div>
-      <!-- 评论内容添加 break-words -->
+      <!-- 评论内容 -->
       <p class="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed break-words">
         {{ comment.content }}
       </p>

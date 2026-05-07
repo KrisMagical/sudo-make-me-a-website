@@ -1,7 +1,6 @@
 package com.magiccode.backend.service;
 
 import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.DeleteObjectsRequest;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.magiccode.backend.dto.ImageDto;
@@ -10,14 +9,12 @@ import com.magiccode.backend.model.*;
 import com.magiccode.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
@@ -32,11 +29,12 @@ public class ImageService {
     private final EmbeddedImageRepository embeddedImageRepository;
     private final ImageMapper imageMapper;
     private final PostRepository postRepository;
-    private final PageRepository pageRepository;
     private final HomeProfileRepository homeProfileRepository;
     private final SocialRepository socialRepository;
     private final SiteConfigRepository siteConfigRepository;
     private final BrowserIconRepository browserIconRepository;
+    private final PostGroupRepository postGroupRepository;
+
 
     private final TransactionTemplate transactionTemplate;
 
@@ -121,17 +119,16 @@ public class ImageService {
         return imageMapper.toDto(saved);
     }
 
+
     @Transactional
-    public ImageDto uploadToPage(String pageSlug, MultipartFile file) {
-        Page page = pageRepository.findBySlug(pageSlug);
-        if (page == null) throw new RuntimeException("Page Not Found");
+    public ImageDto uploadToPostGroup(Long postGroupId, MultipartFile file) {
+        PostGroup postGroup = postGroupRepository.findById(postGroupId)
+                .orElseThrow(() -> new RuntimeException("Collection not found"));
 
-        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.PAGE, page.getId());
-
-        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.PAGE, page.getId(),
+        UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.COLLECTION, postGroup.getId());
+        EmbeddedImage saved = saveImage(EmbeddedImage.OwnerType.COLLECTION, postGroup.getId(),
                 file.getOriginalFilename(), file.getContentType(), file.getSize(),
                 upload.objectKey, upload.url);
-
         return imageMapper.toDto(saved);
     }
 
@@ -228,13 +225,6 @@ public class ImageService {
     }
 
     @Transactional(readOnly = true)
-    public List<ImageDto> listPageImages(String pageSlug) {
-        Page page = pageRepository.findBySlug(pageSlug);
-        if (page == null) throw new RuntimeException("Page Not Found");
-        return listImages(EmbeddedImage.OwnerType.PAGE, page.getId());
-    }
-
-    @Transactional(readOnly = true)
     public List<ImageDto> listHomeImages() {
         HomeProfile home = homeProfileRepository.findFirstByOrderByIdAsc()
                 .orElseThrow(() -> new RuntimeException("Home not configured"));
@@ -276,7 +266,12 @@ public class ImageService {
     protected HomeProfile ensureHomeExists() {
         return homeProfileRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> homeProfileRepository.save(
-                        HomeProfile.builder().title("Home").content("").build()
+                        HomeProfile.builder()
+                                .title("Home")
+                                .content("")
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build()
                 ));
     }
 

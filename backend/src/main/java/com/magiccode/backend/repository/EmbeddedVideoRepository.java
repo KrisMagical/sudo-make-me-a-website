@@ -1,4 +1,4 @@
-package com.magiccode.backend.mapping;
+package com.magiccode.backend.repository;
 
 import com.magiccode.backend.model.EmbeddedVideo;
 import org.springframework.data.jpa.repository.JpaRepository;

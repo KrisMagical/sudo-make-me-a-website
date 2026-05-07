@@ -1,6 +1,6 @@
 package com.magiccode.backend.service;
 
-import com.magiccode.backend.mapping.EmbeddedVideoRepository;
+import com.magiccode.backend.repository.EmbeddedVideoRepository;
 import com.magiccode.backend.model.EmbeddedVideo;
 import com.magiccode.backend.util.VideoEmbedParser;
 import lombok.RequiredArgsConstructor;

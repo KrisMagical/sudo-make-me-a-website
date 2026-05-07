@@ -11,6 +11,7 @@ import com.magiccode.backend.model.EmbeddedVideo;
 import com.magiccode.backend.model.Post;
 import com.magiccode.backend.repository.CategoryRepository;
 import com.magiccode.backend.repository.CommentRepository;
+import com.magiccode.backend.repository.PostGroupItemRepository;
 import com.magiccode.backend.repository.PostRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +39,7 @@ public class PostService {
     private final VideoMapper videoMapper;
     private final ImageService imageService;
     private final CommentRepository commentRepository;
+    private final PostGroupItemRepository postGroupItemRepository;
     private static final String DRAFT_SLUG = "00100000";
 
     public Page<PostSummaryDto> getPostByCategorySlug(String slug, Pageable pageable) {
@@ -56,6 +58,13 @@ public class PostService {
             PostDetailDto dto = postDetailMapper.toPostDetailDto(post);
             dto.setImages(imageService.listPostImages(post.getId()));
             dto.setVideos(videoMapper.toDtoList(videoService.list(EmbeddedVideo.OwnerType.POST, post.getId())));
+
+            List<Object[]> collectionResults = postGroupItemRepository.findCollectionNamesByPostIds(List.of(post.getId()));
+            List<String> collectionNames = collectionResults.stream()
+                    .map(row -> (String) row[1])
+                    .collect(Collectors.toList());
+            dto.setCollectionNames(collectionNames);
+
             return dto;
         } else {
             throw new RuntimeException("Post Not Found.");
@@ -166,6 +175,8 @@ public class PostService {
             throw new RuntimeException("Post Not Found");
         }
         Long postId = post.getId();
+        postGroupItemRepository.deleteByPost(post);
+
         likeLogService.deleteAllByPostId(postId);
         imageService.deleteAll(EmbeddedImage.OwnerType.POST, postId);
         videoService.deleteAll(EmbeddedVideo.OwnerType.POST, postId);
@@ -186,9 +197,38 @@ public class PostService {
         }
 
         List<Post> posts = postRepository.searchByKeyword(keyword.trim(), PageRequest.of(0, limit));
+        if (posts.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> postIds = posts.stream().map(Post::getId).toList();
+        List<Object[]> collectionResults = postGroupItemRepository.findCollectionNamesByPostIds(postIds);
+
+        Map<Long, List<String>> postCollectionsMap = new HashMap<>();
+        for (Object[] row : collectionResults) {
+            Long postId = (Long) row[0];
+            String collectionName = (String) row[1];
+            postCollectionsMap.computeIfAbsent(postId, k -> new ArrayList<>()).add(collectionName);
+        }
 
         return posts.stream()
-                .map(postSummaryMapper::toPostSummaryDto)
+                .map(post -> {
+                    PostSummaryDto dto = postSummaryMapper.toPostSummaryDto(post);
+                    dto.setCollectionNames(postCollectionsMap.getOrDefault(post.getId(), Collections.emptyList()));
+                    return dto;
+                })
                 .toList();
+    }
+
+    public Page<PostSummaryDto> searchPostsByCategorySlug(String slug, String keyword, Pageable pageable) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return Page.empty(pageable);
+        }
+        Category category = categoryRepository.findBySlug(slug);
+        if (category == null) {
+            throw new RuntimeException("Category Not Found.");
+        }
+        Page<Post> postPage = postRepository.searchByCategorySlugAndKeyword(slug, keyword.trim(), DRAFT_SLUG, pageable);
+        return postPage.map(postSummaryMapper::toPostSummaryDto);
     }
 }

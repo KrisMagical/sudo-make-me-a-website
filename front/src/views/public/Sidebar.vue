@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import {ref, computed, onMounted, onUnmounted} from 'vue'
 import request from '@/utils/request'
-import type { SidebarDto, PageTreeNodeDto, CategoryDto, SiteConfigDto } from '@/types/api'
+import type {SidebarDto, CategoryDto, PostSummaryDto, PostGroupDto} from '@/types/api'
+import {collectionsApi} from '@/api/collections'
 import SocialLinks from '@/components/public/SocialLinks.vue'
-import { useThemeStore } from '@/stores/themeStore'
+import {useThemeStore} from '@/stores/themeStore'
 
-const route = useRoute()
 const isMobile = ref(false)
 const isSidebarOpen = ref(false)
 const isPcCollapsed = ref(false)
-const pagesSectionExpanded = ref(false)
 const themeStore = useThemeStore()
 
 const sidebarData = ref<SidebarDto | null>(null)
@@ -18,8 +16,33 @@ const loading = ref(true)
 
 let abortController: AbortController | null = null
 
-const pages = computed(() => sidebarData.value?.pages || [])
-const categories = computed(() => sidebarData.value?.categories || [])
+const viewType = ref<'categories' | 'collections'>('categories')
+
+const categories = ref<CategoryDto[]>([])
+const collections = ref<PostGroupDto[]>([])
+
+type CategoryPosts = {
+  slug: string
+  posts: PostSummaryDto[]
+  page: number
+  hasMore: boolean
+  loading: boolean
+}
+
+type CollectionPosts = {
+  id: number
+  allPosts: PostSummaryDto[]   // 全部文章
+  visibleCount: number          // 当前显示数量
+  loading: boolean
+}
+
+const categoryPostsMap = ref<Map<string, CategoryPosts>>(new Map())
+const collectionPostsMap = ref<Map<number, CollectionPosts>>(new Map())
+
+// 展开/折叠状态
+const expandedCategories = ref<Set<string>>(new Set())
+const expandedCollections = ref<Set<number>>(new Set())
+
 const siteConfig = computed(() => sidebarData.value?.siteConfig || {
   id: 0,
   siteName: 'My Blog',
@@ -32,29 +55,15 @@ const siteConfig = computed(() => sidebarData.value?.siteConfig || {
   isActive: true
 })
 
-const expandedPageIds = ref<Set<number>>(new Set())
-
-const isActive = (item: { slug: string; type: 'page' | 'category' }) => {
-  if (item.type === 'page') {
-    return route.name === 'page' && route.params.slug === item.slug
-  } else {
-    return route.name === 'category' && route.params.slug === item.slug
-  }
-}
-
 const fetchSidebarData = async () => {
-  if (abortController) {
-    abortController.abort()
-  }
-
+  if (abortController) abortController.abort()
   abortController = new AbortController()
   const signal = abortController.signal
 
   loading.value = true
   try {
-    const response = await request.get('/api/sidebar', { signal })
-    sidebarData.value = response
-    autoExpandCurrentPage()
+    const data = await request.get('/api/sidebar', {signal}) as unknown as SidebarDto
+    sidebarData.value = data
   } catch (error: any) {
     if (error.name !== 'AbortError') {
       console.error('Failed to fetch sidebar data:', error)
@@ -67,23 +76,22 @@ const fetchSidebarData = async () => {
 
 const fetchFallbackData = async () => {
   try {
-    const [pagesResponse, categoriesResponse, siteConfigResponse] = await Promise.all([
-      request.get('/api/pages').catch(() => []),
+    const [categoriesRes, siteConfigRes] = await Promise.all([
       request.get('/api/categories').catch(() => []),
       request.get('/api/sidebar/site-config').catch(() => null)
     ])
-    const pageTree = buildPageTree(pagesResponse)
     sidebarData.value = {
-      siteConfig: siteConfigResponse || {
+      siteConfig: (siteConfigRes as any) || {
         id: 0, siteName: 'My Blog', authorName: 'Author',
         siteAvatarUrl: '', footerText: '', metaDescription: '',
         metaKeywords: '', copyrightText: '', isActive: true
       },
-      pages: pageTree,
-      categories: categoriesResponse || [],
+      categories: (categoriesRes as any) || [],
       browserIcon: {
         id: 0,
+        faviconImageId: null,
         faviconUrl: '',
+        appleTouchIconImageId: null,
         appleTouchIconUrl: '',
         isActive: true
       }
@@ -93,92 +101,150 @@ const fetchFallbackData = async () => {
   }
 }
 
-
-const buildPageTree = (flatPages: any[]): PageTreeNodeDto[] => {
-  if (!flatPages || flatPages.length === 0) return []
-  const pageMap = new Map<number, any>()
-  const rootPages: any[] = []
-
-  flatPages.forEach(page => {
-    const node: PageTreeNodeDto = {
-      id: page.id,
-      slug: page.slug,
-      title: page.title,
-      content: page.content || '',
-      parentId: page.parentId,
-      orderIndex: page.orderIndex || 0,
-      children: [],
-      hasChildren: false,
-      depth: 0
-    }
-    pageMap.set(page.id, node)
-  })
-
-  flatPages.forEach(page => {
-    const node = pageMap.get(page.id)
-    if (page.parentId && page.parentId !== null) {
-      const parent = pageMap.get(page.parentId)
-      if (parent) {
-        parent.children.push(node)
-        parent.hasChildren = true
-        node.depth = (parent.depth || 0) + 1
-      } else {
-        rootPages.push(node)
-      }
-    } else {
-      rootPages.push(node)
-    }
-  })
-
-  const sortPages = (pages: any[]) => {
-    return pages.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
+// 加载分类列表
+const fetchCategories = async () => {
+  try {
+    const res = await request.get('/api/categories') as unknown as CategoryDto[]
+    categories.value = res
+  } catch (error) {
+    console.error('Failed to fetch categories:', error)
   }
-
-  const sortTree = (pageList: any[]) => {
-    pageList.forEach(page => {
-      if (page.children && page.children.length > 0) {
-        page.children = sortPages(page.children)
-        sortTree(page.children)
-      }
-    })
-    return sortPages(pageList)
-  }
-
-  return sortTree(rootPages)
 }
 
-const autoExpandCurrentPage = () => {
-  if (route.name !== 'page') return
-  const currentSlug = route.params.slug as string
-  if (!currentSlug) return
-
-  const findPageAndParents = (pageList: PageTreeNodeDto[], targetSlug: string): number[] => {
-    for (const page of pageList) {
-      if (page.slug === targetSlug) {
-        return [page.id]
-      }
-      if (page.children && page.children.length > 0) {
-        const childResult = findPageAndParents(page.children, targetSlug)
-        if (childResult.length > 0) {
-          return [page.id, ...childResult]
-        }
-      }
-    }
-    return []
+// 加载合集列表
+const fetchCollections = async () => {
+  try {
+    const res = await collectionsApi.list()
+    collections.value = res
+  } catch (error) {
+    console.error('Failed to fetch collections:', error)
   }
-
-  const pageIds = findPageAndParents(pages.value, currentSlug)
-  pageIds.slice(0, -1).forEach(id => {
-    expandedPageIds.value.add(id)
-  })
 }
 
-const togglePage = (pageId: number, hasChildren: boolean) => {
-  if (!hasChildren) return
-  if (expandedPageIds.value.has(pageId)) {
-    expandedPageIds.value.delete(pageId)
+// 切换 viewType
+const switchViewType = (type: 'categories' | 'collections') => {
+  viewType.value = type
+  if (type === 'categories') {
+    if (categories.value.length === 0) fetchCategories()
   } else {
-    expandedPageIds.value.add(pageId)
+    if (collections.value.length === 0) fetchCollections()
+  }
+}
+
+// 加载某个分类的文章（分页）
+const loadCategoryPosts = async (categorySlug: string, page = 0) => {
+  const existing = categoryPostsMap.value.get(categorySlug)
+  if (existing && existing.loading) return
+
+  // 初始化或更新状态
+  if (!existing) {
+    categoryPostsMap.value.set(categorySlug, {
+      slug: categorySlug,
+      posts: [],
+      page: 0,
+      hasMore: true,
+      loading: true
+    })
+  } else {
+    existing.loading = true
+  }
+
+  try {
+    // 每页显示 5 篇文章
+    const size = 5
+    const res = await request.get(`/api/posts/category/${categorySlug}`, {
+      params: {page, size}
+    }) as unknown as { content: PostSummaryDto[], totalElements: number, totalPages: number }
+    const newPosts = res.content
+    const current = categoryPostsMap.value.get(categorySlug)!
+    const allPosts = page === 0 ? newPosts : [...current.posts, ...newPosts]
+    categoryPostsMap.value.set(categorySlug, {
+      ...current,
+      posts: allPosts,
+      page: page,
+      hasMore: page + 1 < (res.totalPages || 0),
+      loading: false
+    })
+  } catch (error) {
+    console.error(`Failed to load posts for category ${categorySlug}`, error)
+    const current = categoryPostsMap.value.get(categorySlug)
+    if (current) current.loading = false
+  }
+}
+
+// 加载某个合集的全部文章（一次获取全部）
+const loadCollectionPosts = async (collectionId: number) => {
+  const existing = collectionPostsMap.value.get(collectionId)
+  if (existing && existing.loading) return
+
+  if (!existing) {
+    collectionPostsMap.value.set(collectionId, {
+      id: collectionId,
+      allPosts: [],
+      visibleCount: 5,
+      loading: true
+    })
+  } else {
+    existing.loading = true
+  }
+
+  try {
+    const collection = collections.value.find(c => c.id === collectionId)
+    if (!collection) throw new Error('Collection not found')
+    // 获取完整详情（包含所有文章）
+    const detail = await collectionsApi.getBySlug(collection.slug)
+    const allPosts = detail.posts || []
+    collectionPostsMap.value.set(collectionId, {
+      id: collectionId,
+      allPosts,
+      visibleCount: 5,
+      loading: false
+    })
+  } catch (error) {
+    console.error(`Failed to load posts for collection ${collectionId}`, error)
+    const current = collectionPostsMap.value.get(collectionId)
+    if (current) current.loading = false
+  }
+}
+
+// 展开/折叠分类
+const toggleCategory = (slug: string) => {
+  if (expandedCategories.value.has(slug)) {
+    expandedCategories.value.delete(slug)
+  } else {
+    expandedCategories.value.add(slug)
+    // 未加载过文章则加载
+    if (!categoryPostsMap.value.has(slug)) {
+      loadCategoryPosts(slug, 0)
+    }
+  }
+}
+
+// 展开/折叠合集
+const toggleCollection = (id: number) => {
+  if (expandedCollections.value.has(id)) {
+    expandedCollections.value.delete(id)
+  } else {
+    expandedCollections.value.add(id)
+    if (!collectionPostsMap.value.has(id)) {
+      loadCollectionPosts(id)
+    }
+  }
+}
+
+// 分类加载更多
+const loadMoreCategory = (slug: string) => {
+  const current = categoryPostsMap.value.get(slug)
+  if (current && current.hasMore && !current.loading) {
+    loadCategoryPosts(slug, current.page + 1)
+  }
+}
+
+// 合集加载更多（增加 visibleCount）
+const loadMoreCollection = (id: number) => {
+  const current = collectionPostsMap.value.get(id)
+  if (current && current.visibleCount < current.allPosts.length) {
+    current.visibleCount = Math.min(current.visibleCount + 5, current.allPosts.length)
   }
 }
 
@@ -189,41 +255,16 @@ const checkMobile = () => {
   }
 }
 
-const renderPageTree = (pageList: PageTreeNodeDto[], depth = 0) => {
-  return pageList.map(page => {
-    const isExpanded = expandedPageIds.value.has(page.id)
-    const hasChildren = page.children && page.children.length > 0
-    return {
-      id: page.id,
-      slug: page.slug,
-      title: page.title,
-      type: 'page' as const,
-      depth,
-      hasChildren,
-      isExpanded,
-      children: hasChildren && isExpanded ? renderPageTree(page.children, depth + 1) : []
-    }
-  })
-}
-
-const renderedPages = computed(() => renderPageTree(pages.value))
-
 onMounted(() => {
   fetchSidebarData()
+  fetchCategories()  // 预加载分类列表
   checkMobile()
   window.addEventListener('resize', checkMobile)
 })
 
 onUnmounted(() => {
-  if (abortController) {
-    abortController.abort()
-  }
+  if (abortController) abortController.abort()
   window.removeEventListener('resize', checkMobile)
-})
-
-watch(() => route.fullPath, () => {
-  expandedPageIds.value.clear()
-  autoExpandCurrentPage()
 })
 
 const toggleSidebar = () => {
@@ -238,11 +279,10 @@ const handleLinkClick = () => {
 </script>
 
 <template>
-  <!-- 移动端汉堡菜单按钮 -->
   <button
-    v-if="isMobile"
-    @click="toggleSidebar"
-    class="fixed top-4 left-4 z-50 p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md shadow-sm"
+      v-if="isMobile"
+      @click="toggleSidebar"
+      class="fixed top-4 left-4 z-50 p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md shadow-sm"
   >
     <div class="w-6 h-6 flex flex-col justify-center gap-1">
       <span class="w-full h-0.5 bg-current"></span>
@@ -251,57 +291,49 @@ const handleLinkClick = () => {
     </div>
   </button>
 
-  <!-- PC 端悬浮小按钮 (左下角) -->
   <button
-    v-if="!isMobile"
-    @click="isPcCollapsed = !isPcCollapsed"
-    class="fixed bottom-6 left-6 z-[60] p-2 flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full shadow-sm hover:shadow group transition-all duration-300"
-    title="切换侧边栏"
+      v-if="!isMobile"
+      @click="isPcCollapsed = !isPcCollapsed"
+      class="fixed bottom-6 left-6 z-[60] p-2 flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full shadow-sm hover:shadow group transition-all duration-300"
+      title="Toggle Sidebar"
   >
     <div
-      class="w-5 h-5 text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-transform duration-300"
-      :class="isPcCollapsed ? 'i-carbon-chevron-right' : 'i-carbon-chevron-left'"
+        class="w-5 h-5 text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-transform duration-300"
+        :class="isPcCollapsed ? 'i-carbon-chevron-right' : 'i-carbon-chevron-left'"
     ></div>
   </button>
 
-  <!-- 遮罩层 - 设置 z-40，低于侧边栏的 z-50 -->
   <div
-    v-if="isMobile && isSidebarOpen"
-    @click="toggleSidebar"
-    class="fixed inset-0 bg-black/50 z-40"
+      v-if="isMobile && isSidebarOpen"
+      @click="toggleSidebar"
+      class="fixed inset-0 bg-black/50 z-40"
   ></div>
 
-  <!-- 侧边栏主体 -->
   <aside
-    :class="[
-      'sidebar transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) z-50 flex-shrink-0',
-      // 移动端: 默认 w-64，采用 translate 平移控制悬浮层
+      :class="[
+      'sidebar transition-all duration-500 ease-in-out z-50 flex-shrink-0',
       'fixed inset-y-0 left-0 w-64 shadow-lg',
       isSidebarOpen ? 'translate-x-0' : '-translate-x-full',
-      // PC 端: 取消平移，采用 sticky 占位，通过控制宽度实现页面重排
       'md:sticky md:top-0 md:h-screen md:shadow-none md:translate-x-0',
-      // PC 端收缩状态控制
       isPcCollapsed
         ? 'md:w-0 md:opacity-0 md:border-none'
         : 'md:w-64 md:opacity-100 md:border-r'
     ]"
-    class="bg-white dark:bg-zinc-950 border-zinc-100 dark:border-zinc-700 overflow-hidden"
-      >
-        <div class="sidebar-scroll-container h-full overflow-y-auto p-6 pb-20 w-64">
-      <!-- 用户信息区 -->
+      class="bg-white dark:bg-zinc-950 border-zinc-100 dark:border-zinc-700 overflow-hidden"
+  >
+    <div class="sidebar-scroll-container h-full overflow-y-auto p-6 pb-20 w-64">
+      <!-- 用户信息 -->
       <div class="mb-8">
-        <router-link
-          to="/"
-          @click="handleLinkClick"
-          class="flex items-center gap-3 mb-6 group"
-        >
-          <div class="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
+        <router-link to="/" @click="handleLinkClick" class="flex items-center gap-3 mb-6 group">
+          <div
+              class="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden"
+          >
             <img
-              v-if="siteConfig.siteAvatarUrl"
-              :src="siteConfig.siteAvatarUrl"
-              alt="Avatar"
-              class="w-full h-full object-cover"
-            >
+                v-if="siteConfig.siteAvatarUrl"
+                :src="siteConfig.siteAvatarUrl"
+                alt="Avatar"
+                class="w-full h-full object-cover"
+            />
             <div v-else class="text-xl font-bold text-zinc-400">
               {{ siteConfig.siteName.charAt(0) }}
             </div>
@@ -317,107 +349,144 @@ const handleLinkClick = () => {
         </router-link>
       </div>
 
-      <!-- 静态页面导航 -->
-      <nav class="mb-8">
+      <!-- 切换按钮 -->
+      <div class="flex border border-zinc-200 dark:border-zinc-700 mb-6">
         <button
-          @click="pagesSectionExpanded = !pagesSectionExpanded"
-          class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-widest text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-3 transition-colors"
+            @click="switchViewType('categories')"
+            :class="[
+            'flex-1 py-2 text-xs font-bold uppercase tracking-widest transition-colors',
+            viewType === 'categories'
+              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+          ]"
         >
-          <span>Pages</span>
-          <span :class="pagesSectionExpanded ? 'i-carbon-chevron-up' : 'i-carbon-chevron-down'" class="text-base"></span>
-        </button>
-
-        <div v-if="pagesSectionExpanded">
-          <div v-if="loading" class="space-y-1">
-            <div v-for="i in 3" :key="i" class="h-8 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded"></div>
-          </div>
-
-          <ul v-else class="space-y-1 max-h-[340px] overflow-y-auto pr-2 custom-scroll">
-            <li v-for="page in renderedPages" :key="page.id">
-              <!-- 原有页面项代码保持完全不变（包括展开箭头、子页面等） -->
-              <div class="flex items-center">
-                <router-link
-                  :to="`/page/${page.slug}`"
-                  @click="handleLinkClick"
-                  :class="[
-                    'flex-1 py-2 px-3 rounded-md transition-colors text-sm',
-                    'hover:bg-zinc-100 dark:hover:bg-zinc-900',
-                    {
-                      'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(page),
-                      'text-zinc-700 dark:text-zinc-300': !isActive(page)
-                    }
-                  ]"
-                  :style="{ paddingLeft: `${page.depth * 20 + 12}px` }"
-                >
-                  {{ page.title }}
-                </router-link>
-
-                <button
-                  v-if="page.hasChildren"
-                  @click="togglePage(page.id, page.hasChildren)"
-                  class="p-1 ml-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-                >
-                  <div v-if="page.isExpanded" class="w-4 h-4 i-carbon-chevron-down"></div>
-                  <div v-else class="w-4 h-4 i-carbon-chevron-right"></div>
-                </button>
-              </div>
-
-              <!-- 子页面（原有 transition 保持不变） -->
-              <transition name="slide">
-                <ul v-if="page.children && page.children.length > 0 && page.isExpanded" class="mt-1">
-                  <li v-for="child in page.children" :key="child.id">
-                    <router-link
-                      :to="`/page/${child.slug}`"
-                      @click="handleLinkClick"
-                      :class="[
-                        'block py-2 px-3 rounded-md transition-colors text-sm ml-4',
-                        'hover:bg-zinc-100 dark:hover:bg-zinc-900',
-                        {
-                          'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive(child),
-                          'text-zinc-700 dark:text-zinc-300': !isActive(child)
-                        }
-                      ]"
-                      :style="{ paddingLeft: `${child.depth * 20 + 12}px` }"
-                    >
-                      {{ child.title }}
-                    </router-link>
-                  </li>
-                </ul>
-              </transition>
-            </li>
-          </ul>
-        </div>
-      </nav>
-
-      <!-- 分类导航 -->
-      <nav class="mb-8">
-        <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Categories
-        </h3>
-        <div v-if="loading" class="space-y-1">
+        </button>
+        <button
+            @click="switchViewType('collections')"
+            :class="[
+            'flex-1 py-2 text-xs font-bold uppercase tracking-widest transition-colors',
+            viewType === 'collections'
+              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+          ]"
+        >
+          Collections
+        </button>
+      </div>
+
+      <!-- 分类视图 -->
+      <div v-if="viewType === 'categories'">
+        <div v-if="loading && categories.length === 0" class="space-y-1">
           <div v-for="i in 3" :key="i" class="h-8 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded"></div>
         </div>
-        <ul v-else class="space-y-1">
+        <ul v-else class="space-y-3">
           <li v-for="category in categories" :key="category.id">
-            <router-link
-              :to="`/category/${category.slug}`"
-              @click="handleLinkClick"
-              :class="[
-                'block py-2 px-3 rounded-md transition-colors text-sm',
-                'hover:bg-zinc-100 dark:hover:bg-zinc-900',
-                {
-                  'font-medium bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white': isActive({ slug: category.slug, type: 'category' }),
-                  'text-zinc-700 dark:text-zinc-300': !isActive({ slug: category.slug, type: 'category' })
-                }
-              ]"
-            >
-              {{ category.name }}
-            </router-link>
+            <div
+                class="flex items-center justify-between py-2 px-2 rounded-md group hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                @contextmenu.prevent="toggleCategory(category.slug)">
+              <router-link :to="`/category/${category.slug}`" @click.stop
+                           class="text-sm font-medium hover:underline flex-1">
+                {{ category.name }}
+              </router-link>
+              <button
+                  @click.stop="toggleCategory(category.slug)"
+                  class="w-4 h-4 transition-transform cursor-pointer"
+                  :class="expandedCategories.has(category.slug) ? 'rotate-90' : ''"
+              >
+                <div class="i-carbon-chevron-right"></div>
+              </button>
+            </div>
+            <div v-if="expandedCategories.has(category.slug)"
+                 class="ml-2 pl-3 border-l border-zinc-200 dark:border-zinc-800 mt-1 space-y-1">
+              <!-- 文章列表 -->
+              <div v-if="categoryPostsMap.get(category.slug)?.loading" class="text-xs text-zinc-400 pl-2">
+                Loading...
+              </div>
+              <div v-else>
+                <router-link
+                    v-for="post in categoryPostsMap.get(category.slug)?.posts"
+                    :key="post.id"
+                    :to="`/post/${post.slug}`"
+                    @click="handleLinkClick"
+                    class="block text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white py-1 pl-2 border-l-2 border-transparent hover:border-zinc-400 transition-colors"
+                >
+                  {{ post.title }}
+                </router-link>
+                <button
+                    v-if="categoryPostsMap.get(category.slug)?.hasMore"
+                    @click.stop="loadMoreCategory(category.slug)"
+                    class="text-xs text-blue-500 hover:underline mt-1 pl-2"
+                    :disabled="categoryPostsMap.get(category.slug)?.loading"
+                >
+                  more ⟶
+                </button>
+                <div
+                    v-if="(!categoryPostsMap.get(category.slug)?.posts || categoryPostsMap.get(category.slug)?.posts.length === 0) && !categoryPostsMap.get(category.slug)?.loading"
+                    class="text-xs text-zinc-400 pl-2">
+                  No posts
+                </div>
+              </div>
+            </div>
           </li>
         </ul>
-      </nav>
+      </div>
 
-      <!-- 分隔线 -->
+      <!-- 合集视图 -->
+      <div v-else>
+        <div v-if="loading && collections.length === 0" class="space-y-1">
+          <div v-for="i in 3" :key="i" class="h-8 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded"></div>
+        </div>
+        <ul v-else class="space-y-3">
+          <li v-for="collection in collections" :key="collection.id">
+            <div
+                class="flex items-center justify-between py-2 px-2 rounded-md group hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                @contextmenu.prevent="toggleCollection(collection.id)">
+              <router-link :to="`/collection/${collection.slug}`" @click.stop
+                           class="text-sm font-medium hover:underline flex-1">
+                {{ collection.name }}
+              </router-link>
+              <button
+                  @click.stop="toggleCollection(collection.id)"
+                  class="w-4 h-4 transition-transform cursor-pointer"
+                  :class="expandedCollections.has(collection.id) ? 'rotate-90' : ''"
+              >
+                <div class="i-carbon-chevron-right"></div>
+              </button>
+            </div>
+            <div v-if="expandedCollections.has(collection.id)" class="ml-4 mt-1 space-y-2">
+              <div v-if="collectionPostsMap.get(collection.id)?.loading" class="text-xs text-zinc-400 pl-2">
+                Loading...
+              </div>
+              <div v-else>
+                <router-link
+                    v-for="post in collectionPostsMap.get(collection.id)?.allPosts.slice(0, collectionPostsMap.get(collection.id)?.visibleCount)"
+                    :key="post.id"
+                    :to="`/post/${post.slug}`"
+                    @click="handleLinkClick"
+                    class="block text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white py-1 pl-2 border-l-2 border-transparent hover:border-zinc-400 transition-colors"
+                >
+                  {{ post.title }}
+                </router-link>
+                <button
+                    v-if="collectionPostsMap.get(collection.id) && collectionPostsMap.get(collection.id)!.visibleCount < collectionPostsMap.get(collection.id)!.allPosts.length"
+                    @click.stop="loadMoreCollection(collection.id)"
+                    class="text-xs text-blue-500 hover:underline mt-1 pl-2"
+                    :disabled="collectionPostsMap.get(collection.id)?.loading"
+                >
+                  more ⟶
+                </button>
+                <div
+                    v-if="(!collectionPostsMap.get(collection.id)?.allPosts || collectionPostsMap.get(collection.id)?.allPosts.length === 0) && !collectionPostsMap.get(collection.id)?.loading"
+                    class="text-xs text-zinc-400 pl-2">
+                  Empty collection
+                </div>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div class="border-t border-zinc-100 dark:border-zinc-700 my-6"></div>
 
       <!-- 社交链接 -->
@@ -425,26 +494,26 @@ const handleLinkClick = () => {
         <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Connect
         </h3>
-        <SocialLinks variant="sidebar" />
+        <SocialLinks variant="sidebar"/>
       </div>
 
+      <!-- 外观切换 -->
       <div class="mb-6">
         <h3 class="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Appearance
         </h3>
         <button
-          @click="themeStore.toggleTheme"
-          class="w-full flex items-center justify-between px-3 py-2 text-sm border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+            @click="themeStore.toggleTheme"
+            class="w-full flex items-center justify-between px-3 py-2 text-sm border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
         >
           <span>{{ themeStore.isDark ? 'Dark Mode' : 'Light Mode' }}</span>
-          <div :class="themeStore.isDark ? 'i-carbon-moon' : 'i-carbon-sun'" class="w-5 h-5" />
+          <div :class="themeStore.isDark ? 'i-carbon-moon' : 'i-carbon-sun'" class="w-5 h-5"/>
         </button>
       </div>
 
-      <!-- 分隔线 -->
       <div class="border-t border-zinc-100 dark:border-zinc-700 my-6"></div>
 
-      <!-- 版权信息 -->
+      <!-- 版权 -->
       <div class="text-xs text-zinc-500">
         <p v-if="siteConfig.copyrightText" class="mb-2">{{ siteConfig.copyrightText }}</p>
         <p v-else>© {{ new Date().getFullYear() }} {{ siteConfig.siteName }}</p>
@@ -454,65 +523,27 @@ const handleLinkClick = () => {
 </template>
 
 <style scoped>
-/* 侧边栏容器：隐藏滚动条但保留滚动功能 */
 .sidebar-scroll-container {
-  /* Firefox */
   scrollbar-width: none;
-  /* IE/Edge */
   -ms-overflow-style: none;
-  /* 平滑滚动体验 */
   scroll-behavior: smooth;
-  /* 避免内容在宽度变化时折行 */
-  white-space: nowrap;
 }
 
-/* Chrome, Safari, Edge (Blink 引擎) */
 .sidebar-scroll-container::-webkit-scrollbar {
-  width: 4px; /* 极细的滚动条 */
-  display: none; /* 默认完全隐藏 */
+  width: 4px;
+  display: none;
 }
 
-/* 仅在鼠标悬浮在侧边栏时才显示滚动条轨道，增强交互感 */
 .sidebar-scroll-container:hover::-webkit-scrollbar {
   display: block;
 }
 
 .sidebar-scroll-container::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.3); /* 淡灰色半透明 */
+  background-color: rgba(156, 163, 175, 0.3);
   border-radius: 10px;
 }
 
 .sidebar-scroll-container::-webkit-scrollbar-thumb:hover {
   background-color: rgba(156, 163, 175, 0.5);
-}
-
-/* --- 原有的动画类保持不变 --- */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.3s ease;
-  max-height: 500px;
-  overflow: hidden;
-}
-
-.slide-enter-from,
-.slide-leave-to {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.slide-enter-to,
-.slide-leave-from {
-  max-height: 500px;
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.custom-scroll::-webkit-scrollbar {
-  width: 3px;
-}
-.custom-scroll::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.4);
-  border-radius: 10px;
 }
 </style>

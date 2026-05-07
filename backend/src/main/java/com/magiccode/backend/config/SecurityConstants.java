@@ -12,11 +12,12 @@ public final class SecurityConstants {
             "/api/home/**",
             "/api/categories/**",
             "/api/posts/**",
-            "/api/pages/**",
             "/api/socials",
             "/api/videos/**",
             "/api/comments/**",
-            "/api/sidebar/**"
+            "/api/sidebar/**",
+            "/api/collections/**",
+            "/api/maintenance/**"
     };
 
     public static final String[] PUBLIC_POST = {

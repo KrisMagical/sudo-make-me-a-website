@@ -5,7 +5,7 @@ import com.magiccode.backend.model.Post;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring",uses = {CommentMapper.class})
 public interface PostDetailMapper {
     @Mapping(target = "categoryName", source = "category.name")
     @Mapping(target = "comments", source = "comments")

@@ -41,17 +41,15 @@ const submit = async () => {
   error.value = ''
 
   try {
-    // 提交时 form.value 中已包含正确的 parentId
     await publicApi.addComment(props.postId, form.value)
 
     success.value = true
 
-    // 重置表单内容
     form.value = {
       name: '',
       email: '',
       content: '',
-      parentId: undefined // 关键：重置 parentId 以退出回复模式
+      parentId: undefined
     }
 
     emit('success')
@@ -66,11 +64,24 @@ const cancelReply = () => {
   form.value.parentId = undefined
   emit('cancel')
 }
+
+const onMouseEnter = (e: Event) => {
+  const el = e.target as HTMLElement
+  if (el) {
+    el.style.backgroundColor = '#27272a'
+  }
+}
+
+const onMouseLeave = (e: Event) => {
+  const el = e.target as HTMLElement
+  if (el) {
+    el.style.backgroundColor = '#18181b'
+  }
+}
 </script>
 
 <template>
   <div class="border border-zinc-200 dark:border-zinc-800 p-6">
-    <!-- 动态标题 -->
     <h3 class="text-sm font-bold uppercase tracking-widest mb-4">
       {{ props.parentId ? 'Reply to Comment' : 'Post Comment' }}
     </h3>
@@ -88,21 +99,21 @@ const cancelReply = () => {
         <div>
           <label class="block text-xs uppercase tracking-widest mb-1">Name</label>
           <input
-            v-model="form.name"
-            type="text"
-            required
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-            :disabled="loading"
+              v-model="form.name"
+              type="text"
+              required
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              :disabled="loading"
           />
         </div>
         <div>
           <label class="block text-xs uppercase tracking-widest mb-1">Email</label>
           <input
-            v-model="form.email"
-            type="email"
-            required
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-            :disabled="loading"
+              v-model="form.email"
+              type="email"
+              required
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              :disabled="loading"
           />
           <p class="text-xs text-zinc-500 mt-1">Your email will not be published.</p>
         </div>
@@ -111,35 +122,32 @@ const cancelReply = () => {
       <div>
         <label class="block text-xs uppercase tracking-widest mb-1">Comment</label>
         <textarea
-          v-model="form.content"
-          required
-          rows="4"
-          class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-          :disabled="loading"
+            v-model="form.content"
+            required
+            rows="4"
+            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+            :disabled="loading"
         ></textarea>
       </div>
 
       <div class="flex justify-end items-center gap-3">
-        <!-- 取消回复按钮：仅在回复模式下显示 -->
         <button
-          v-if="props.parentId"
-          type="button"
-          @click="cancelReply"
-          class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-          :disabled="loading"
+            v-if="props.parentId"
+            type="button"
+            @click="cancelReply"
+            class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            :disabled="loading"
         >
           Cancel
         </button>
 
         <button
-          type="submit"
-          :disabled="loading"
-          class="px-6 py-2 text-white text-sm font-bold uppercase tracking-tighter transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          :style="{
-            backgroundColor: loading ? undefined : '#18181b',
-          }"
-          @mouseenter="$event.target.style.backgroundColor = '#27272a'"
-          @mouseleave="$event.target.style.backgroundColor = '#18181b'"
+            type="submit"
+            :disabled="loading"
+            class="px-6 py-2 text-white text-sm font-bold uppercase tracking-tighter transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :style="{ backgroundColor: loading ? undefined : '#18181b' }"
+            @mouseenter="onMouseEnter"
+            @mouseleave="onMouseLeave"
         >
           {{ loading ? 'Submitting...' : (props.parentId ? 'Submit Reply' : 'Submit Comment') }}
         </button>

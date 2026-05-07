@@ -104,4 +104,14 @@ public class PostController {
         List<PostSummaryDto> results = postService.searchPosts(q, limit);
         return ResponseEntity.ok(results);
     }
+
+    @GetMapping("/category/{slug}/search")
+    public ResponseEntity<Page<PostSummaryDto>> searchPostsByCategory(
+            @PathVariable String slug,
+            @RequestParam String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Page<PostSummaryDto> result = postService.searchPostsByCategorySlug(slug, q, PageRequest.of(page, size));
+        return ResponseEntity.ok(result);
+    }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { marked } from 'marked'
+import { marked, type TokenizerAndRendererExtension } from 'marked'
 import { parseVideoUrl } from '@/utils/videoParser'
 import renderMathInElement from 'katex/contrib/auto-render'
 import 'katex/dist/katex.min.css'
@@ -8,84 +8,70 @@ import 'katex/dist/katex.min.css'
 const props = defineProps<{ content: string }>()
 const contentRef = ref<HTMLElement>()
 
-// 1. Math formula Tokenizer (highest priority)
-// Protect math formulas from being parsed by marked (e.g., _, *, etc.)
-const mathExtension = {
+// 1. Math extension
+const mathExtension: TokenizerAndRendererExtension = {
   name: 'math',
   level: 'inline',
-  start(src: string) {
-    return src.indexOf('$')
-  },
+  start(src: string) { return src.indexOf('$') },
   tokenizer(src: string) {
-    // First match block formulas $$...$$ (multiline)
-    const blockRule = /^\$\$([\s\S]+?)\$\$/
-    const blockMatch = blockRule.exec(src)
+    const blockMatch = /^\$\$([\s\S]+?)\$\$/.exec(src)
     if (blockMatch) {
       return {
         type: 'math',
         raw: blockMatch[0],
-        text: blockMatch[1].trim(),
+        text: (blockMatch[1] || '').trim(),
         displayMode: true
       }
     }
-
-    // Then match inline formulas $...$
-    // Use a stricter regex to ensure it's not escaped \$, and does not contain line breaks
-    const inlineRule = /^\$([^$\n]+?)\$/
-    const inlineMatch = inlineRule.exec(src)
+    const inlineMatch = /^\$([^$\n]+?)\$/.exec(src)
     if (inlineMatch) {
       return {
         type: 'math',
         raw: inlineMatch[0],
-        text: inlineMatch[1].trim(),
+        text: (inlineMatch[1] || '').trim(),
         displayMode: false
       }
     }
-
     return undefined
   },
-  renderer(token: any) {
-    // Return a marked span, KaTeX's auto-render will process it later
-    // Use data-formula attribute to store the original formula for debugging
-    const className = token.displayMode ? 'math-block' : 'math-inline'
-    return `<span class="${className}" data-formula="${token.text.replace(/"/g, '&quot;')}">${token.raw}</span>`
+  renderer(token) {
+    const t = token as any
+    const className = t.displayMode ? 'math-block' : 'math-inline'
+    const formula = (t.text || '').replace(/"/g, '&quot;')
+    return `<span class="${className}" data-formula="${formula}">${t.raw}</span>`
   }
 }
 
-// 2. Wiki link extension [[slug]] or [[slug|label]]
-const wikiLinkExtension = {
+// 2. Wiki link extension
+const wikiLinkExtension: TokenizerAndRendererExtension = {
   name: 'wikiLink',
   level: 'inline',
-  start(src: string) {
-    return src.indexOf('[[')
-  },
+  start(src: string) { return src.indexOf('[[') },
   tokenizer(src: string) {
-    const rule = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/
-    const match = rule.exec(src)
+    const match = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/.exec(src)
     if (match) {
+      const slug = (match[1] || '').trim()
+      const text = (match[2] || match[1] || '').trim()
       return {
         type: 'wikiLink',
         raw: match[0],
-        slug: match[1].trim(),
-        text: match[2] ? match[2].trim() : match[1].trim()
+        slug: slug,
+        text: text
       }
     }
     return undefined
   },
-  renderer(token: any) {
-    // Generate a route link pointing to the page
-    // Note: In v-html, router-link does not work automatically, so use <a> tag
-    // Combined with front-end route interception or direct navigation
-    return `<a href="/page/${encodeURIComponent(token.slug)}" class="internal-link" data-slug="${token.slug}">${token.text}</a>`
+  renderer(token) {
+    const t = token as any
+    return `<a href="/page/${encodeURIComponent(t.slug || '')}" class="internal-link" data-slug="${t.slug}">${t.text}</a>`
   }
 }
 
-// 3. Video extension @[video](url) or ![](video.mp4)
-const videoExtension = {
+// 3. Video extension
+const videoExtension: TokenizerAndRendererExtension = {
   name: 'video',
   level: 'inline',
   start(src: string) {
-    // Match both @[video] and ![] video syntax
     const index1 = src.indexOf('@[')
     const index2 = src.indexOf('![')
     if (index1 === -1) return index2
@@ -93,87 +79,60 @@ const videoExtension = {
     return Math.min(index1, index2)
   },
   tokenizer(src: string) {
-    // Match @[video](url) syntax
-    const videoRule = /^@\[video\]\(([^)]+)\)/
-    const videoMatch = videoRule.exec(src)
+    const videoMatch = /^@\[video\]\(([^)]+)\)/.exec(src)
     if (videoMatch) {
-      return {
-        type: 'video',
-        raw: videoMatch[0],
-        url: videoMatch[1].trim(),
-        title: null
-      }
+      return { type: 'video', raw: videoMatch[0], url: (videoMatch[1] || '').trim(), title: null }
     }
-
-    // Match ![](url) syntax, but detect if it's a video file
-    const imageRule = /^!\[([^\]]*)\]\(([^)]+)\)/
-    const imageMatch = imageRule.exec(src)
+    const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)/.exec(src)
     if (imageMatch) {
-      const url = imageMatch[2].trim()
-      // Check if it's a video file extension
-      const videoExts = ['.mp4', '.webm', '.ogg', '.mov', '.m3u8']
-      const isVideo = videoExts.some(ext => url.toLowerCase().endsWith(ext))
+      const url = (imageMatch[2] || '').trim()
+      const isVideo = ['.mp4', '.webm', '.ogg', '.mov', '.m3u8'].some(ext => url.toLowerCase().endsWith(ext))
       if (isVideo) {
-        return {
-          type: 'video',
-          raw: imageMatch[0],
-          url: url,
-          title: imageMatch[1].trim() || null
-        }
+        return { type: 'video', raw: imageMatch[0], url: url, title: (imageMatch[1] || '').trim() || null }
       }
     }
     return undefined
   },
-  renderer(token: any) {
-    const videoInfo = parseVideoUrl(token.url)
-
+  renderer(token) {
+    const t = token as any
+    if (!t.url) return t.raw
+    const videoInfo = parseVideoUrl(t.url)
     if (videoInfo) {
-      // Platform video (YouTube, Bilibili, etc.)
       return `<div class="video-wrapper my-6 rounded-lg overflow-hidden shadow-lg"><iframe src="${videoInfo.embedUrl}" frameborder="0" allowfullscreen class="w-full aspect-video"></iframe></div>`
-    } else if (token.url.match(/\.(mp4|webm|ogg|mov|m3u8)$/i)) {
-      // Local video files
-      return `
-        <div class="video-wrapper my-6 rounded-lg overflow-hidden shadow-lg">
-          <video controls class="w-full" ${token.title ? `poster="${token.title}"` : ''}>
-            <source src="${token.url}" type="video/${token.url.split('.').pop()}">
-            Your browser does not support the video tag.
-          </video>
-        </div>
-      `
+    } else if (t.url.match(/\.(mp4|webm|ogg|mov|m3u8)$/i)) {
+      return `<div class="video-wrapper my-6 rounded-lg overflow-hidden shadow-lg">
+                <video controls class="w-full" ${t.title ? `poster="${t.title}"` : ''}>
+                  <source src="${t.url}" type="video/${t.url.split('.').pop()}">
+                </video>
+              </div>`
     }
-    return `<a href="${token.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${token.title || token.url}</a>`
+    return `<a href="${t.url}" target="_blank" rel="noopener noreferrer">${t.title || t.url}</a>`
   }
 }
 
-// 4. Task list support (handling task lists output by TipTap)
-const taskListExtension = {
+// 4. Task list extension
+const taskListExtension: TokenizerAndRendererExtension = {
   name: 'taskList',
   level: 'block',
-  start(src: string) {
-    return src.match(/^- \[[ x]\] /) ? 0 : -1
-  },
+  start(src: string) { return src.match(/^- \[[ x]\] /) ? 0 : -1 },
   tokenizer(src: string) {
-    const rule = /^(?:(- \[[ x]\] .*)(?:\n|$))+/gm
+    const rule = /^(?:- \[([ x])\] (.*)(?:\n|$))+/g
     const match = rule.exec(src)
     if (match) {
-      const lines = match[0].split('\n').filter(l => l.trim())
-      const items = lines.map(line => {
-        const taskMatch = line.match(/^- \[([ x])\] (.*)/)
+      const items = match[0].split('\n').filter(l => l.trim()).map(line => {
+        const itemMatch = line.match(/^- \[([ x])\] (.*)/)
         return {
-          checked: taskMatch?.[1] === 'x',
-          text: taskMatch?.[2] || ''
+          checked: itemMatch ? itemMatch[1] === 'x' : false,
+          text: itemMatch ? (itemMatch[2] || '').trim() : ''
         }
       })
-      return {
-        type: 'taskList',
-        raw: match[0],
-        items
-      }
+      return { type: 'taskList', raw: match[0], items }
     }
     return undefined
   },
-  renderer(token: any) {
-    const itemsHtml = token.items.map((item: any) => `
+  renderer(token) {
+    const t = token as any
+    const itemsHtml = (t.items || []).map((item: any) => `
       <li class="task-item flex items-start my-2">
         <input type="checkbox" ${item.checked ? 'checked' : ''} disabled class="mt-1 mr-3" />
         <span>${item.text}</span>
@@ -183,73 +142,40 @@ const taskListExtension = {
   }
 }
 
-// 5. Table support (optimized styles)
-const tableExtension = {
-  name: 'table',
-  level: 'block',
-  renderer(token: any) {
-    // Use marked's default table rendering, but add custom classes
-    const header = token.header.map((cell: string) => `<th class="px-4 py-2 bg-gray-50 dark:bg-gray-800">${cell}</th>`).join('')
-    const rows = token.cells.map((row: string[]) =>
-      `<tr>${row.map(cell => `<td class="px-4 py-2 border-t border-gray-200 dark:border-gray-700">${cell}</td>`).join('')}</tr>`
-    ).join('')
-    return `<table class="min-w-full border-collapse my-6"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`
-  }
-}
-
 // Configure marked
 marked.use({
   extensions: [mathExtension, wikiLinkExtension, videoExtension, taskListExtension],
   gfm: true,
-  breaks: true,
-  pedantic: false,
-  mangle: false,
-  headerIds: false
+  breaks: true
 })
 
-// Parse Markdown to HTML
 const parsedHtml = computed(() => {
-  if (!props.content) return ''
-  return marked.parse(props.content)
+  return props.content ? (marked.parse(props.content) as string) : ''
 })
 
-// Handle internal link clicks
+const emit = defineEmits<{ (e: 'navigate', slug: string): void }>()
+
 const handleInternalLinkClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement
-  const link = target.closest('a.internal-link')
-  if (link) {
+  const link = (e.target as HTMLElement).closest('a.internal-link')
+  const slug = link?.getAttribute('data-slug')
+  if (slug) {
     e.preventDefault()
-    const slug = link.getAttribute('data-slug')
-    if (slug) {
-      // Emit custom event for parent component to handle navigation
-      emit('navigate', slug)
-    }
+    emit('navigate', slug)
   }
 }
 
-// Post-render processing: initialize KaTeX and other dynamic effects
 watch(parsedHtml, async () => {
   await nextTick()
   if (contentRef.value) {
-    // Render math formulas
     renderMathInElement(contentRef.value, {
       delimiters: [
         { left: '$$', right: '$$', display: true },
-        { left: '$', right: '$', display: false },
-        // Compatible with old \(\) and \[\] formats
-        { left: '\\(', right: '\\)', display: false },
-        { left: '\\[', right: '\\]', display: true }
+        { left: '$', right: '$', display: false }
       ],
-      throwOnError: false,
-      output: 'html',
-      trust: true,
-      // Ignore already rendered elements
-      ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      throwOnError: false
     })
 
-    // Add responsive wrapper to all tables
-    const tables = contentRef.value.querySelectorAll('table')
-    tables.forEach(table => {
+    contentRef.value.querySelectorAll('table').forEach(table => {
       if (!table.parentElement?.classList.contains('table-responsive')) {
         const wrapper = document.createElement('div')
         wrapper.className = 'table-responsive overflow-x-auto my-4'
@@ -257,42 +183,15 @@ watch(parsedHtml, async () => {
         wrapper.appendChild(table)
       }
     })
-
-    // Add language markers to all code blocks
-    const preBlocks = contentRef.value.querySelectorAll('pre')
-    preBlocks.forEach(pre => {
-      const code = pre.querySelector('code')
-      if (code && code.className) {
-        const langMatch = code.className.match(/language-(\w+)/)
-        if (langMatch) {
-          pre.setAttribute('data-language', langMatch[1])
-        }
-      }
-    })
   }
 }, { immediate: true })
 
-// Add click event listener when component mounts
-onMounted(() => {
-  contentRef.value?.addEventListener('click', handleInternalLinkClick)
-})
-
-// Remove click event listener when component unmounts
-onUnmounted(() => {
-  contentRef.value?.removeEventListener('click', handleInternalLinkClick)
-})
-
-const emit = defineEmits<{
-  (e: 'navigate', slug: string): void
-}>()
+onMounted(() => contentRef.value?.addEventListener('click', handleInternalLinkClick))
+onUnmounted(() => contentRef.value?.removeEventListener('click', handleInternalLinkClick))
 </script>
 
 <template>
-  <div
-    ref="contentRef"
-    class="prose-vim max-w-none"
-    v-html="parsedHtml"
-  ></div>
+  <div ref="contentRef" class="prose-vim max-w-none" v-html="parsedHtml"></div>
 </template>
 
 <style scoped>

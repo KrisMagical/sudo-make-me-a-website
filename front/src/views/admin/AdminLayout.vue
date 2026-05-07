@@ -9,12 +9,13 @@ const themeStore = useThemeStore();
 
 const navLinks = [
   { name: 'Posts', path: '/admin/posts' },
-  { name: 'Pages', path: '/admin/pages' },
+  { name: 'Collections', path: '/admin/collections' },
   { name: 'Categories', path: '/admin/categories' },
   { name: 'Social', path: '/admin/socials' },
   { name: 'Home', path: '/admin/home' },
   { name: 'Sidebar', path: '/admin/sidebar' },
   { name: 'Comments', path: '/admin/comments' },
+  { name: 'Maintenance', path: '/admin/maintenance' },
 ];
 
 const logout = () => {
@@ -31,17 +32,16 @@ const logout = () => {
           <span class="font-bold tracking-tighter text-lg">BLOG_ADMIN</span>
           <nav class="hidden md:flex space-x-6 text-sm">
             <router-link
-              v-for="link in navLinks"
-              :key="link.path"
-              :to="link.path"
-              class="hover:text-black dark:hover:text-white transition-colors"
-              active-class="underline underline-offset-4 decoration-2"
+                v-for="link in navLinks"
+                :key="link.path"
+                :to="link.path"
+                class="hover:text-black dark:hover:text-white transition-colors"
+                active-class="underline underline-offset-4 decoration-2"
             >
               {{ link.name }}
             </router-link>
           </nav>
         </div>
-
         <div class="flex items-center space-x-4 text-sm">
           <button @click="themeStore.toggleTheme" class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">
             <div v-if="themeStore.isDark" i-carbon-sun />
@@ -53,7 +53,6 @@ const logout = () => {
         </div>
       </div>
     </header>
-
     <main class="max-w-6xl mx-auto p-6">
       <router-view />
     </main>

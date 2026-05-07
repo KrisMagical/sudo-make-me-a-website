@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import request from '@/utils/request'
 import type { ImageDto } from '@/types/api'
 
 interface Props {
-  ownerType: 'POST' | 'PAGE' | 'HOME'
+  ownerType: 'POST' | 'HOME'
   ownerId?: string | number
-  ownerSlug?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  ownerId: 0,
-  ownerSlug: ''
+  ownerId: 0
 })
 
 const images = ref<ImageDto[]>([])
 let abortController: AbortController | null = null
-let debounceTimer: number | null = null
 
 const fetchImages = async () => {
   if (abortController) abortController.abort()
@@ -26,65 +23,38 @@ const fetchImages = async () => {
     let url = ''
     if (props.ownerType === 'POST') {
       url = `/api/posts/${props.ownerId}/images`
-    } else if (props.ownerType === 'PAGE') {
-      if (props.ownerSlug && props.ownerSlug.length > 0) {
-        url = `/api/pages/${props.ownerSlug}/images`
-      } else if (props.ownerId && props.ownerId !== 0) {
-        console.warn('PAGE media library should use slug instead of id')
-        url = `/api/pages/${props.ownerId}/images`
-      } else {
-        console.error('PAGE media library requires either ownerSlug or ownerId')
-        return
-      }
     } else {
-      url = `/api/home/images`
+      url = '/api/home/images'
     }
 
-    console.log('Fetching images from:', url)
-    const response = await request.get(url, {
+    images.value = (await request.get(url, {
       signal: abortController.signal
-    })
-    images.value = response
+    })) as ImageDto[]
   } catch (error: any) {
     if (error.name === 'AbortError') {
-      console.log('Fetch aborted')
       return
     }
     console.error('Failed to fetch images:', error)
   }
 }
 
-const debouncedFetchImages = () => {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = window.setTimeout(() => {
-    fetchImages()
-  }, 300)
-}
-
 const deleteImage = async (imageId: number) => {
   if (!confirm('Delete this image?')) return
   try {
     await request.delete(`/api/images/${props.ownerType}/${props.ownerId}/${imageId}`)
-    fetchImages()
+    void fetchImages()
   } catch (error: any) {
     console.error('Failed to delete image:', error)
     alert('Failed to delete image. Please try again.')
   }
 }
 
-watch(() => props.ownerSlug, (newSlug, oldSlug) => {
-  if (newSlug !== oldSlug && props.ownerType === 'PAGE') {
-    debouncedFetchImages()
-  }
-})
-
 onMounted(() => {
-  fetchImages()
+  void fetchImages()
 })
 
 onUnmounted(() => {
   if (abortController) abortController.abort()
-  if (debounceTimer) clearTimeout(debounceTimer)
 })
 
 defineExpose({ fetchImages })
@@ -93,29 +63,29 @@ defineExpose({ fetchImages })
 <template>
   <div class="mt-8">
     <h3 class="text-sm font-bold border-b border-zinc-800 mb-4 tracking-tighter">ATTACHED_MEDIA</h3>
-    
+
     <div v-if="images.length === 0" class="text-sm text-zinc-400 italic">
       No images attached to this {{ ownerType.toLowerCase() }}.
     </div>
-    
+
     <div v-else class="grid grid-cols-4 md:grid-cols-6 gap-4">
-      <div 
-        v-for="img in images" 
-        :key="img.id" 
-        class="group relative aspect-square border border-zinc-200 dark:border-zinc-700 p-1"
+      <div
+          v-for="img in images"
+          :key="img.id"
+          class="group relative aspect-square border border-zinc-200 dark:border-zinc-700 p-1"
       >
-        <img 
-          :src="img.url" 
-          :alt="img.originalFilename" 
-          class="w-full h-full object-cover"
-          loading="lazy"
+        <img
+            :src="img.url"
+            :alt="img.originalFilename"
+            class="w-full h-full object-cover"
+            loading="lazy"
         />
-        <div 
-          class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+        <div
+            class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
         >
-          <button 
-            @click="deleteImage(img.id)" 
-            class="text-white text-xs hover:underline px-2 py-1 bg-red-600/70 hover:bg-red-700/70"
+          <button
+              @click="deleteImage(img.id)"
+              class="text-white text-xs hover:underline px-2 py-1 bg-red-600/70 hover:bg-red-700/70"
           >
             REMOVE
           </button>

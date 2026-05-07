@@ -28,4 +28,5 @@ public class PostDetailDto {
     private List<CommentDto> comments;
     private List<ImageDto> images;
     private List<VideoDto> videos;
+    private List<String> collectionNames;
 }

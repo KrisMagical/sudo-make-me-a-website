@@ -2,10 +2,8 @@ package com.magiccode.backend.controller;
 
 import com.magiccode.backend.dto.ImageDto;
 import com.magiccode.backend.model.EmbeddedImage;
-import com.magiccode.backend.repository.PageRepository;
 import com.magiccode.backend.service.ImageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,7 +18,6 @@ import java.util.List;
 @RequestMapping("/api")
 public class ImageController {
     private final ImageService imageService;
-    private final PageRepository pageRepository;
 
     @GetMapping("/images/{ownerType}/{ownerId}/{imageId}")
     public ResponseEntity<Void> getEmbeddedImage(
@@ -56,20 +53,6 @@ public class ImageController {
     @GetMapping("/posts/{postId}/images")
     public ResponseEntity<List<ImageDto>> listPostImages(@PathVariable Long postId) {
         return ResponseEntity.ok(imageService.listPostImages(postId));
-    }
-
-    // -------------------- Page Images --------------------
-    @PreAuthorize("hasRole('ROOT')")
-    @PostMapping(value = "/pages/{pageSlug}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ImageDto> uploadPageImage(
-            @PathVariable String pageSlug,
-            @RequestParam("file") MultipartFile file) {
-        return ResponseEntity.ok(imageService.uploadToPage(pageSlug, file));
-    }
-
-    @GetMapping("/pages/{pageSlug}/images")
-    public ResponseEntity<List<ImageDto>> listPageImages(@PathVariable String pageSlug) {
-        return ResponseEntity.ok(imageService.listPageImages(pageSlug));
     }
 
     // -------------------- Home Images --------------------

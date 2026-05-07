@@ -1,25 +1,26 @@
 package com.magiccode.backend.dto;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PageSummaryDto {
+public class PostGroupDto {
     private Long id;
+    private String name;
     private String slug;
-    private String title;
-    private Long parentId;
-    private Boolean hasChildren;
-    private String excerpt;
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private String description;
+    private Long coverImageId;
+    private String coverImageUrl;
+    private List<ImageDto> images;
+    private List<PostSummaryDto> posts;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

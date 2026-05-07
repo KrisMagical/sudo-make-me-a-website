@@ -28,27 +28,20 @@ const isEditing = computed(() => route.name === 'admin-post-edit')
 
 const createdAtLocal = computed({
   get: () => {
-    const val = post.value?.createdAt;
-    if (!val) return '';
-
-    let date: Date;
-    if (Array.isArray(val)) {
-      date = new Date(val[0], val[1] - 1, val[2], val[3] || 0, val[4] || 0, val[5] || 0);
-    } else {
-      date = new Date(val);
-    }
-
-    if (isNaN(date.getTime())) return '';
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    const val = post.value?.createdAt
+    if (!val) return ''
+    const date = new Date(val)
+    if (isNaN(date.getTime())) return ''
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
   },
   set: (val: string) => {
     if (post.value) {
-      post.value.createdAt = val ? `${val}:00` : '';
+      post.value.createdAt = val ? `${val}:00` : ''
     }
   }
 })
@@ -56,30 +49,35 @@ const createdAtLocal = computed({
 const fetchData = async () => {
   loading.value = true
   try {
-    categories.value = await categoriesApi.list()
+    categories.value = (await categoriesApi.list()) as unknown as CategoryDto[]
 
     if (!isEditing.value && categories.value.length === 0) {
-      notify('Please create a Category first before writing a post', 'warning')
+      notify('Please create a Category first before writing a post', 'error')
       router.push('/admin/categories')
       return
     }
 
     const slug = route.params.slug as string
     if (isEditing.value && slug) {
-      post.value = await postsApi.getDetail(slug)
+      post.value = (await postsApi.getDetail(slug)) as unknown as PostDetailDto
     } else {
       let draftPost: PostDetailDto | null = null
-
       try {
-        draftPost = await postsApi.getDetail(DRAFT_SLUG)
+        draftPost = (await postsApi.getDetail(DRAFT_SLUG)) as unknown as PostDetailDto
       } catch (e) {
+        // ignore
       }
 
       if (draftPost && draftPost.id) {
         post.value = draftPost
       } else {
         const defaultCat = categories.value[0]
-        const newDraft: any = {
+        if (!defaultCat) {
+          notify('No categories available. Please create one first.', 'error')
+          router.push('/admin/categories')
+          return
+        }
+        const newDraft = {
           id: 0,
           title: DRAFT_SLUG,
           content: '',
@@ -90,9 +88,11 @@ const fetchData = async () => {
           viewCount: 0,
           comments: [],
           images: [],
-          videos: []
-        }
-        post.value = await postsApi.create(defaultCat.slug, newDraft)
+          videos: [],
+          createdAt: '',
+          updatedAt: ''
+        } as PostDetailDto
+        post.value = (await postsApi.create(defaultCat.slug, newDraft)) as unknown as PostDetailDto
       }
 
       if (post.value) {
@@ -108,9 +108,9 @@ const fetchData = async () => {
 const generateSlug = () => {
   if (!post.value?.title) return
   post.value.slug = post.value.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
 }
 
 const save = async () => {
@@ -133,15 +133,13 @@ const save = async () => {
 
   saving.value = true
   try {
-    const targetSlug = isEditing.value ? (route.params.slug as string) : DRAFT_SLUG
-
     await postsApi.update(post.value.id, categorySlug, post.value)
 
     if (editorRef.value && post.value.id) {
       await editorRef.value.processPendingUploads(post.value.id)
     }
 
-    const savedPost = await postsApi.update(post.value.id, categorySlug, post.value)
+    const savedPost = (await postsApi.update(post.value.id, categorySlug, post.value)) as unknown as PostDetailDto
     post.value = savedPost
 
     notify(isEditing.value ? 'Post updated successfully' : 'Post created successfully', 'success')
@@ -164,7 +162,7 @@ const discardChanges = async () => {
   const msg = isEditing.value ? 'Discard all unsaved changes?' : 'Cancel and delete this draft?'
   if (confirm(msg)) {
     if (isEditing.value) {
-      fetchData()
+      await fetchData()
     } else {
       try {
         await postsApi.delete(DRAFT_SLUG)
@@ -176,8 +174,11 @@ const discardChanges = async () => {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  void fetchData()
+})
 </script>
+
 <template>
   <div class="space-y-8">
     <div class="flex justify-between items-end border-b-2 border-zinc-800 pb-2">
@@ -186,15 +187,15 @@ onMounted(fetchData)
       </h2>
       <div class="flex gap-2">
         <button
-          @click="discardChanges"
-          class="px-3 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
+            @click="discardChanges"
+            class="px-3 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
         >
           {{ isEditing ? 'Discard' : 'Cancel' }}
         </button>
         <button
-          @click="save"
-          :disabled="saving || !post"
-          class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+            @click="save"
+            :disabled="saving || !post"
+            class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
         >
           {{ saving ? 'Saving...' : isEditing ? 'Update Post' : 'Create Post' }}
         </button>
@@ -208,40 +209,40 @@ onMounted(fetchData)
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Title</label>
           <input
-            v-model="post.title"
-            type="text"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 text-xl font-bold"
-            placeholder="Post Title"
-            @blur="generateSlug"
+              v-model="post.title"
+              type="text"
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 text-xl font-bold"
+              placeholder="Post Title"
+              @blur="generateSlug"
           />
         </div>
 
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Slug</label>
           <input
-            v-model="post.slug"
-            type="text"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono"
-            placeholder="post-slug"
+              v-model="post.slug"
+              type="text"
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono"
+              placeholder="post-slug"
           />
         </div>
 
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Content</label>
           <Editor
-            ref="editorRef"
-            v-model="post.content"
-            owner-type="POST"
-            :owner-id="post.id || 'new'"
-            @image-uploaded="onImageUploaded"
+              ref="editorRef"
+              v-model="post.content"
+              owner-type="POST"
+              :owner-id="post.id || 'new'"
+              @image-uploaded="onImageUploaded"
           />
         </div>
 
         <MediaLibrary
-          v-if="post.id"
-          ref="mediaLibraryRef"
-          owner-type="POST"
-          :owner-id="post.id"
+            v-if="post.id"
+            ref="mediaLibraryRef"
+            owner-type="POST"
+            :owner-id="post.id"
         />
       </div>
 
@@ -249,14 +250,14 @@ onMounted(fetchData)
         <div>
           <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Category</label>
           <select
-            v-model="post.categoryName"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              v-model="post.categoryName"
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
           >
             <option value="" disabled>Select a category</option>
             <option
-              v-for="category in categories"
-              :key="category.id"
-              :value="category.name"
+                v-for="category in categories"
+                :key="category.id"
+                :value="category.name"
             >
               {{ category.name }}
             </option>
@@ -268,9 +269,9 @@ onMounted(fetchData)
             Created Date
           </label>
           <input
-            type="datetime-local"
-            v-model="createdAtLocal"
-            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono text-sm"
+              type="datetime-local"
+              v-model="createdAtLocal"
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 font-mono text-sm"
           />
         </div>
 

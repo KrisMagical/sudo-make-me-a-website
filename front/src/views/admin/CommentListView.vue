@@ -1,15 +1,13 @@
 <!-- src/views/admin/CommentListView.vue -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { publicApi } from '@/api/public'
+import { ref } from 'vue'
 import { commentsApi } from '@/api/comments'
 import { useAuthStore } from '@/stores/authStore'
 import { notify } from '@/utils/feedback'
 import CommentNode from '@/components/public/CommentNode.vue'
-import type { CommentDto, PostSummaryDto, CommentSearchResult } from '@/types/api'
+import type { CommentDto, CommentSearchResult } from '@/types/api'
 
 const auth = useAuthStore()
-const loading = ref(false)
 const searchKeyword = ref('')
 const searchResults = ref<CommentSearchResult[]>([])
 const searching = ref(false)
@@ -33,7 +31,7 @@ const performSearch = async () => {
 
   searching.value = true
   try {
-    searchResults.value = await commentsApi.search(searchKeyword.value.trim())
+    searchResults.value = (await commentsApi.search(searchKeyword.value.trim())) as unknown as CommentSearchResult[]
     if (searchResults.value.length === 0) {
       notify('No comments found matching your search', 'info')
     }
@@ -105,7 +103,7 @@ const submitReply = async () => {
   }
 
   try {
-    const newComment = await commentsApi.addAdminComment(replyModal.value.postId, {
+    await commentsApi.addAdminComment(replyModal.value.postId, {
       name: replyModal.value.name,
       email: replyModal.value.email,
       content: replyModal.value.content,
@@ -148,23 +146,23 @@ const getParentInfo = (comment: CommentSearchResult) => {
         <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Search Comments</label>
         <div class="flex gap-2">
           <input
-            v-model="searchKeyword"
-            type="text"
-            placeholder="Search by content, username, post title or slug..."
-            class="flex-1 bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-            @keyup.enter="performSearch"
+              v-model="searchKeyword"
+              type="text"
+              placeholder="Search by content, username, post title or slug..."
+              class="flex-1 bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              @keyup.enter="performSearch"
           />
           <button
-            @click="performSearch"
-            :disabled="searching || !searchKeyword.trim()"
-            class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
+              @click="performSearch"
+              :disabled="searching || !searchKeyword.trim()"
+              class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
           >
             {{ searching ? 'Searching...' : 'Search' }}
           </button>
           <button
-            v-if="searchResults.length > 0 || searchKeyword"
-            @click="clearSearch"
-            class="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
+              v-if="searchResults.length > 0 || searchKeyword"
+              @click="clearSearch"
+              class="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
           >
             Clear
           </button>
@@ -184,8 +182,8 @@ const getParentInfo = (comment: CommentSearchResult) => {
           <div class="mb-3 pb-2 border-b border-zinc-200 dark:border-zinc-800">
             <div class="text-xs text-zinc-500">Post:</div>
             <router-link
-              :to="`/admin/posts/edit/${comment.postSlug}`"
-              class="text-sm font-mono text-blue-600 hover:underline"
+                :to="`/admin/posts/edit/${comment.postSlug}`"
+                class="text-sm font-mono text-blue-600 hover:underline"
             >
               {{ comment.postTitle }} ({{ comment.postSlug }})
             </router-link>
@@ -198,14 +196,14 @@ const getParentInfo = (comment: CommentSearchResult) => {
 
           <!-- 评论内容 -->
           <CommentNode
-            :comment="comment"
-            :parent-info="getParentInfo(comment)"
-            @reply="openReply(comment.postId, $event)"
+              :comment="comment"
+              :parent-info="getParentInfo(comment)"
+              @reply="openReply(comment.postId, $event)"
           >
             <template #actions="{ comment: cmt }">
               <button
-                @click="handleDelete(cmt)"
-                class="text-sm text-red-600 hover:text-red-800 ml-2"
+                  @click="handleDelete(cmt)"
+                  class="text-sm text-red-600 hover:text-red-800 ml-2"
               >
                 Delete
               </button>
@@ -234,21 +232,21 @@ const getParentInfo = (comment: CommentSearchResult) => {
           {{ replyModal.parentId ? 'Reply to Comment' : 'Add Comment to Post' }}
         </h3>
         <input
-          v-model="replyModal.name"
-          placeholder="Name"
-          class="w-full border p-2 mb-2 dark:bg-zinc-800"
+            v-model="replyModal.name"
+            placeholder="Name"
+            class="w-full border p-2 mb-2 dark:bg-zinc-800"
         />
         <input
-          v-model="replyModal.email"
-          type="email"
-          placeholder="Email (required)"
-          class="w-full border p-2 mb-2 dark:bg-zinc-800"
+            v-model="replyModal.email"
+            type="email"
+            placeholder="Email (required)"
+            class="w-full border p-2 mb-2 dark:bg-zinc-800"
         />
         <textarea
-          v-model="replyModal.content"
-          placeholder="Content"
-          rows="4"
-          class="w-full border p-2 mb-2 dark:bg-zinc-800"
+            v-model="replyModal.content"
+            placeholder="Content"
+            rows="4"
+            class="w-full border p-2 mb-2 dark:bg-zinc-800"
         ></textarea>
         <div class="flex justify-end gap-2">
           <button @click="replyModal.visible = false" class="px-4 py-2 bg-gray-300 dark:bg-zinc-700 rounded">

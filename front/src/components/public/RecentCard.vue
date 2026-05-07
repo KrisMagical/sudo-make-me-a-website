@@ -1,70 +1,66 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PostSummaryDto, PageSummaryDto } from '@/types/api'
+import type { PostSummaryDto } from '@/types/api'
 
-type RecentItem = (PostSummaryDto | PageSummaryDto) & { type: 'post' | 'page' }
+const props = defineProps<{
+  post: PostSummaryDto
+}>()
 
-const props = defineProps<{ item: RecentItem }>()
-
-const displayExcerpt = computed(() => {
-  let excerpt = ''
-  if (props.item.type === 'post') {
-    excerpt = (props.item as PostSummaryDto).excerpt || ''
-  } else {
-    excerpt = (props.item as PageSummaryDto).excerpt || ''
-  }
-  if (!excerpt) return ''
-  return excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
-})
-
-const categoryDisplay = computed(() => {
-  return props.item.type === 'post'
-      ? (props.item as PostSummaryDto).categoryName || 'Post'
-      : 'Page'
+const cleanExcerpt = computed(() => {
+  if (!props.post.excerpt) return ''
+  let text = props.post.excerpt.replace(/!\[.*?\]\(.*?\)/g, '')
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(text, 'text/html')
+  const body = doc.body
+  const mediaTags = ['img', 'video', 'iframe', 'audio', 'embed', 'object']
+  mediaTags.forEach(tag => {
+    body.querySelectorAll(tag).forEach(el => el.remove())
+  })
+  body.querySelectorAll('p, div, span').forEach(el => {
+    if (el.children.length === 0 && !el.textContent?.trim()) {
+      el.remove()
+    }
+  })
+  return body.innerHTML
 })
 </script>
 
 <template>
-  <article class="group border border-zinc-200 dark:border-zinc-600 hover:border-zinc-400 dark:hover:border-zinc-500 hover:shadow-md transition-all p-6 bg-white dark:bg-zinc-950 flex flex-col h-full">
+  <article class="group border border-zinc-100 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors p-6">
     <div class="flex items-start justify-between mb-3">
       <div class="text-xs font-mono text-zinc-500 uppercase tracking-tighter">
-        {{ categoryDisplay }}
+        {{ post.categoryName }}
       </div>
       <div class="text-xs text-zinc-400 font-mono">
-        {{ new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
+        {{ new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}
       </div>
     </div>
 
-    <router-link :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`" class="flex-1">
+    <router-link :to="`/post/${post.slug}`">
       <h3 class="text-xl font-bold mb-3 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">
-        {{ item.title }}
+        {{ post.title }}
       </h3>
     </router-link>
 
-    <!-- 统一显示摘要（Post 和 Page 都有 excerpt 字段） -->
-    <p
-        v-if="displayExcerpt"
-        class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2"
-        v-html="displayExcerpt"
+    <div
+        v-if="cleanExcerpt"
+        class="text-sm text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2 [&>*]:m-0"
+        v-html="cleanExcerpt"
     />
 
-    <!-- 底部区域 -->
-    <div class="flex items-center justify-between text-xs text-zinc-500 mt-auto pt-4">
-      <div v-if="item.type === 'post'" class="flex items-center space-x-4">
+    <div class="flex items-center justify-between text-xs text-zinc-500">
+      <div class="flex items-center space-x-4">
         <span class="flex items-center gap-1 text-green-600 dark:text-green-400">
-          <div i-carbon-thumbs-up class="w-3 h-3" /> {{ (item as PostSummaryDto).likeCount }}
+          <div i-carbon-thumbs-up class="w-3 h-3" /> {{ post.likeCount }}
         </span>
         <span class="flex items-center gap-1 text-red-600 dark:text-red-400">
-          <div i-carbon-thumbs-down class="w-3 h-3" /> {{ (item as PostSummaryDto).dislikeCount }}
+          <div i-carbon-thumbs-down class="w-3 h-3" /> {{ post.dislikeCount }}
         </span>
-        <span>Views: {{ (item as PostSummaryDto).viewCount }}</span>
-      </div>
-      <div v-else class="text-zinc-400">
-        <div i-carbon-document class="w-4 h-4" />
+        <span>Views: {{ post.viewCount }}</span>
       </div>
 
       <router-link
-          :to="item.type === 'post' ? `/post/${item.slug}` : `/page/${item.slug}`"
+          :to="`/post/${post.slug}`"
           class="font-bold uppercase tracking-tighter hover:underline"
       >
         Read →

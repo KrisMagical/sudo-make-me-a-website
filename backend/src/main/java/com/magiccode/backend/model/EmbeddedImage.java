@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class EmbeddedImage {
-    public enum OwnerType {POST, PAGE, HOME, SOCIAL, SITE_AVATAR, FAVICON, APPLE_TOUCH_ICON}
+    public enum OwnerType {POST, HOME, SOCIAL, SITE_AVATAR, FAVICON, APPLE_TOUCH_ICON, COLLECTION}
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
