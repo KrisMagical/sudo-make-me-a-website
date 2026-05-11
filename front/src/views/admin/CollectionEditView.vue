@@ -29,13 +29,36 @@ const collection = ref<PostGroupDto>({
 const loading = ref(false)
 const saving = ref(false)
 
-// 帖子搜索与添加
 const postSearchKeyword = ref('')
 const searchResults = ref<PostSummaryDto[]>([])
 const searchingPosts = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-// 封面文件选择
+const recentPosts = ref<PostSummaryDto[]>([])
+const loadingRecent = ref(false)
+const recentLimit = ref(5)
+const hasMoreRecent = ref(true)
+
+const fetchRecentPosts = async (isLoadMore = false) => {
+  if (loadingRecent.value || (!hasMoreRecent.value && isLoadMore)) return
+  loadingRecent.value = true
+  try {
+    const res = (await postsApi.listRecent(recentLimit.value)) as unknown as PostSummaryDto[]
+    recentPosts.value = res
+    hasMoreRecent.value = res.length >= recentLimit.value
+  } catch (error) {
+    console.error('Failed to fetch recent posts:', error)
+    notify('Failed to load recent posts', 'error')
+  } finally {
+    loadingRecent.value = false
+  }
+}
+
+const loadMoreRecent = () => {
+  recentLimit.value += 5
+  fetchRecentPosts(true)
+}
+
 const coverFile = ref<File | null>(null)
 const coverPreview = ref<string>('')
 
@@ -77,6 +100,7 @@ const searchPosts = async () => {
     searchResults.value = results.filter(p => !existingIds.has(p.id))
   } catch (error) {
     notify('Failed to search posts', 'error')
+    searchResults.value = []
   } finally {
     searchingPosts.value = false
   }
@@ -84,6 +108,15 @@ const searchPosts = async () => {
 
 const onSearchInput = () => {
   if (searchTimer) clearTimeout(searchTimer)
+  const kw = postSearchKeyword.value.trim()
+  if (!kw) {
+    searchResults.value = []
+    // 清空搜索时，如果最近文章未加载则加载
+    if (recentPosts.value.length === 0) {
+      fetchRecentPosts()
+    }
+    return
+  }
   searchTimer = setTimeout(searchPosts, 400)
 }
 
@@ -91,7 +124,14 @@ const addPostToCollection = async (post: PostSummaryDto) => {
   try {
     await collectionsApi.addPost(collection.value.id, post.id)
     collection.value.posts.push(post)
-    searchResults.value = searchResults.value.filter(p => p.id !== post.id)
+    if (postSearchKeyword.value.trim()) {
+      searchResults.value = searchResults.value.filter(p => p.id !== post.id)
+    } else {
+      const index = recentPosts.value.findIndex(p => p.id === post.id)
+      if (index !== -1) {
+        recentPosts.value.splice(index, 1)
+      }
+    }
     notify('Post added to collection', 'success')
   } catch (error) {
     notify('Failed to add post', 'error')
@@ -155,7 +195,6 @@ const uploadCoverIfNeeded = async () => {
   }
 }
 
-// 保存逻辑 —— 与 Post 完全一致
 const save = async () => {
   if (!collection.value.name.trim()) {
     notify('Name is required', 'error')
@@ -239,6 +278,7 @@ onMounted(() => {
   } else {
     initDraft()
   }
+  fetchRecentPosts()
 })
 </script>
 
@@ -256,8 +296,11 @@ onMounted(() => {
         >
           Cancel
         </button>
-        <button @click="save" :disabled="saving"
-                class="px-6 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-bold uppercase tracking-widest hover:opacity-90 disabled:opacity-50 transition-opacity">
+        <button
+            @click="save"
+            :disabled="saving"
+            class="px-6 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-sm font-bold uppercase tracking-widest hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
           {{ saving ? 'SAVING...' : 'SAVE' }}
         </button>
       </div>
@@ -266,10 +309,7 @@ onMounted(() => {
     <div v-if="loading" class="font-mono text-zinc-500 animate-pulse">Loading data...</div>
 
     <div v-else class="grid grid-cols-1 xl:grid-cols-3 gap-12">
-
-      <!-- 左侧：基本信息 -->
       <div class="xl:col-span-2 space-y-8">
-        <!-- 表单区域优化：增加块状感 -->
         <div class="space-y-6 bg-zinc-50 dark:bg-zinc-900/50 p-6 border border-zinc-200 dark:border-zinc-800">
           <div>
             <label class="block font-mono text-xs uppercase tracking-widest text-zinc-500 mb-2">Name</label>
@@ -299,12 +339,12 @@ onMounted(() => {
             ></textarea>
           </div>
 
-          <!-- 封面图上传：更清晰的布局 -->
           <div>
             <label class="block font-mono text-xs uppercase tracking-widest text-zinc-500 mb-3">Cover Image</label>
             <div class="flex items-center gap-6">
               <div
-                  class="w-40 h-24 bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center overflow-hidden relative group">
+                  class="w-40 h-24 bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center overflow-hidden relative group"
+              >
                 <img
                     v-if="coverPreview"
                     :src="coverPreview"
@@ -326,12 +366,9 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 已添加帖子管理：列表项改为代码行风格 -->
         <div>
           <div class="flex justify-between items-end mb-4">
-            <label class="block font-mono text-xs uppercase tracking-widest text-zinc-500">
-              Posts inside ({{ collection.posts.length }})
-            </label>
+            <label class="block font-mono text-xs uppercase tracking-widest text-zinc-500">Posts inside ({{ collection.posts.length }})</label>
             <button
                 v-if="collection.posts.length > 0"
                 @click="saveOrder"
@@ -340,13 +377,9 @@ onMounted(() => {
               [ COMMIT_ORDER ]
             </button>
           </div>
-
-          <div v-if="collection.posts.length === 0"
-               class="p-8 border border-dashed border-zinc-300 dark:border-zinc-700 text-center">
-            <span
-                class="font-mono text-sm text-zinc-400">Directory is empty. Search and add posts from the right panel.</span>
+          <div v-if="collection.posts.length === 0" class="p-8 border border-dashed border-zinc-300 dark:border-zinc-700 text-center">
+            <span class="font-mono text-sm text-zinc-400">Directory is empty. Search and add posts from the right panel.</span>
           </div>
-
           <ul v-else class="flex flex-col gap-2">
             <li
                 v-for="(post, index) in collection.posts"
@@ -356,37 +389,18 @@ onMounted(() => {
               <div class="flex-1 flex items-center gap-3">
                 <span class="font-mono text-xs text-zinc-400 w-6">{{ String(index + 1).padStart(2, '0') }}</span>
                 <span class="font-bold text-sm truncate">{{ post.title }}</span>
-                <span
-                    class="px-2 py-0.5 bg-zinc-200 dark:bg-zinc-800 font-mono text-[10px] text-zinc-600 dark:text-zinc-300 uppercase">{{
-                    post.categoryName
-                  }}</span>
+                <span class="px-2 py-0.5 bg-zinc-200 dark:bg-zinc-800 font-mono text-[10px] text-zinc-600 dark:text-zinc-300 uppercase">{{ post.categoryName }}</span>
               </div>
               <div class="flex items-center gap-3 font-mono text-xs ml-4">
-                <button
-                    @click="movePost(index, -1)"
-                    :disabled="index === 0"
-                    class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white disabled:opacity-20 transition-colors"
-                >
-                  [UP]
-                </button>
-                <button
-                    @click="movePost(index, 1)"
-                    :disabled="index === collection.posts.length - 1"
-                    class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white disabled:opacity-20 transition-colors"
-                >
-                  [DN]
-                </button>
-                <button @click="removePostFromCollection(post.id)"
-                        class="text-red-500 hover:text-red-700 transition-colors ml-2">
-                  [RM]
-                </button>
+                <button @click="movePost(index, -1)" :disabled="index === 0" class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white disabled:opacity-20 transition-colors">[UP]</button>
+                <button @click="movePost(index, 1)" :disabled="index === collection.posts.length - 1" class="text-zinc-500 hover:text-zinc-900 dark:hover:text-white disabled:opacity-20 transition-colors">[DN]</button>
+                <button @click="removePostFromCollection(post.id)" class="text-red-500 hover:text-red-700 transition-colors ml-2">[RM]</button>
               </div>
             </li>
           </ul>
         </div>
       </div>
 
-      <!-- 右侧：添加帖子搜索（命令面板风格） -->
       <div class="space-y-6">
         <div class="bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 p-1">
           <div class="border border-zinc-700 dark:border-zinc-300 p-5">
@@ -407,10 +421,13 @@ onMounted(() => {
               />
             </div>
 
-            <div class="h-80 overflow-y-auto pr-1 custom-scrollbar">
+            <!-- 滚动列表区域 -->
+            <div class="h-96 overflow-y-auto pr-1 custom-scrollbar">
+              <!-- 搜索加载中 -->
               <div v-if="searchingPosts" class="font-mono text-xs text-zinc-500 mt-4">Executing query...</div>
 
-              <div v-else-if="searchResults.length > 0" class="space-y-2">
+              <!-- 搜索模式：有结果 -->
+              <div v-else-if="postSearchKeyword.trim() && searchResults.length > 0" class="space-y-2">
                 <div
                     v-for="post in searchResults"
                     :key="post.id"
@@ -429,8 +446,48 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div v-else-if="postSearchKeyword.trim() && !searchingPosts" class="font-mono text-xs text-zinc-500 mt-4">
+              <!-- 搜索模式：无结果 -->
+              <div v-else-if="postSearchKeyword.trim() && searchResults.length === 0 && !searchingPosts" class="font-mono text-xs text-zinc-500 mt-4">
                 0 results returned.
+              </div>
+
+              <div v-else-if="!postSearchKeyword.trim()">
+                <div v-if="loadingRecent && recentPosts.length === 0" class="font-mono text-xs text-zinc-500 mt-4">
+                  Loading recent posts...
+                </div>
+                <div v-else class="space-y-3">
+                  <div
+                      v-for="post in recentPosts"
+                      :key="post.id"
+                      class="flex flex-col gap-2 p-3 bg-zinc-800 dark:bg-white border border-zinc-700 dark:border-zinc-300 hover:border-zinc-500 transition-colors"
+                  >
+                    <div>
+                      <div class="font-bold text-sm leading-tight mb-1">{{ post.title }}</div>
+                      <div class="font-mono text-[10px] text-zinc-400 uppercase">{{ post.categoryName }}</div>
+                    </div>
+                    <button
+                        @click="addPostToCollection(post)"
+                        class="self-start px-3 py-1 font-mono text-[10px] uppercase font-bold border border-zinc-600 dark:border-zinc-400 hover:bg-white hover:text-black dark:hover:bg-black dark:hover:text-white transition-colors"
+                    >
+                      + APPEND
+                    </button>
+                  </div>
+
+                  <!-- 更多按钮 -->
+                  <div class="pt-2 pb-1 flex justify-center">
+                    <button
+                        v-if="hasMoreRecent"
+                        @click="loadMoreRecent"
+                        :disabled="loadingRecent"
+                        class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200 dark:hover:text-zinc-600 transition-colors uppercase disabled:opacity-50"
+                    >
+                      {{ loadingRecent ? 'LOADING...' : 'MORE ↓' }}
+                    </button>
+                    <span v-else class="text-[10px] font-mono text-zinc-700 dark:text-zinc-600 uppercase">
+                      NO MORE POSTS
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -451,19 +508,15 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 针对右侧搜索面板的暗黑滚动条样式 */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
 }
-
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
-
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #555;
 }
-
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #ccc;
 }

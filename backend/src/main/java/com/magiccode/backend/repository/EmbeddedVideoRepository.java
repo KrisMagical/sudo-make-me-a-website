@@ -9,4 +9,6 @@ public interface EmbeddedVideoRepository extends JpaRepository<EmbeddedVideo,Lon
     List<EmbeddedVideo> findAllByOwnerTypeAndOwnerIdOrderByOrderIndexAsc(EmbeddedVideo.OwnerType ownerType, Long ownerId);
 
     void deleteAllByOwnerTypeAndOwnerId(EmbeddedVideo.OwnerType ownerType, Long ownerId);
+
+    void deleteByOwnerTypeAndOwnerIdIn(EmbeddedVideo.OwnerType ownerType, List<Long> ownerIds);
 }

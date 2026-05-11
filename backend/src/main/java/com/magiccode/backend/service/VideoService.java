@@ -42,4 +42,9 @@ public class VideoService {
     public void deleteAll(EmbeddedVideo.OwnerType ownerType, Long ownerId) {
         embeddedVideoRepository.deleteAllByOwnerTypeAndOwnerId(ownerType, ownerId);
     }
+
+    public void deleteAllByOwnerIds(EmbeddedVideo.OwnerType ownerType, List<Long> ownerIds) {
+        if (ownerIds == null || ownerIds.isEmpty()) return;
+        embeddedVideoRepository.deleteByOwnerTypeAndOwnerIdIn(ownerType, ownerIds);
+    }
 }

@@ -53,4 +53,15 @@ public interface PostGroupItemRepository extends JpaRepository<PostGroupItem, Lo
 
     @Query("SELECT pgi.post.id, pg.name FROM PostGroupItem pgi JOIN pgi.postGroup pg WHERE pgi.post.id IN :postIds")
     List<Object[]> findCollectionNamesByPostIds(@Param("postIds") List<Long> postIds);
+
+    @Query("SELECT pgi.post.id FROM PostGroupItem pgi WHERE pgi.postGroup.id = :groupId")
+    List<Long> findPostIdsByGroupId(@Param("groupId") Long groupId);
+
+    @Modifying
+    @Query("DELETE FROM PostGroupItem pgi WHERE pgi.postGroup.id = :groupId")
+    void deleteByPostGroupId(@Param("groupId") Long groupId);
+
+    @Modifying
+    @Query("DELETE FROM PostGroupItem pgi WHERE pgi.post.id IN :postIds")
+    void deleteByPostIdIn(@Param("postIds") List<Long> postIds);
 }

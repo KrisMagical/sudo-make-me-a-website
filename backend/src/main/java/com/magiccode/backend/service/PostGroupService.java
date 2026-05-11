@@ -111,28 +111,34 @@ public class PostGroupService {
         return buildDto(postGroup);
     }
 
+    @Transactional
     public void delete(Long id, boolean deletePosts) {
         PostGroup postGroup = postGroupRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Collection not found"));
-        List<PostGroupItem> pgi = postGroupItemRepository.findByPostGroupOrderByOrderIndexAsc(postGroup);
-        List<Post> posts = pgi.stream().map(PostGroupItem::getPost).distinct().toList();
-        postGroupItemRepository.deleteByPostGroup(postGroup);
+        List<Long> postIds = postGroupItemRepository.findPostIdsByGroupId(id);
 
-        if (deletePosts) {
-            postGroupItemRepository.deleteByPostIn(posts);
-            for (Post post : posts) {
-                likeLogService.deleteAllByPostId(post.getId());
-                imageService.deleteAll(EmbeddedImage.OwnerType.POST, post.getId());
-                videoService.deleteAll(EmbeddedVideo.OwnerType.POST, post.getId());
-                commentRepository.deleteByPostId(post.getId());
-                postRepository.delete(post);
-            }
+        postGroupItemRepository.deleteByPostGroupId(id);
+        postGroupItemRepository.flush();
+
+        if (deletePosts && !postIds.isEmpty()) {
+            postGroupItemRepository.deleteByPostIdIn(postIds);
+            postGroupItemRepository.flush();
+
+            likeLogService.deleteAllByPostIds(postIds);
+            imageService.deleteAllByOwnerIds(EmbeddedImage.OwnerType.POST, postIds);
+            videoService.deleteAllByOwnerIds(EmbeddedVideo.OwnerType.POST, postIds);
+            commentRepository.deleteByPostIds(postIds);
+
+            List<Post> postsToDelete = postRepository.findAllById(postIds);
+            postRepository.deleteAllInBatch(postsToDelete);
         }
+
         if (postGroup.getCoverImageId() != null) {
             imageService.delete(EmbeddedImage.OwnerType.COLLECTION, postGroup.getId(), postGroup.getCoverImageId());
         }
         imageService.deleteAll(EmbeddedImage.OwnerType.COLLECTION, postGroup.getId());
-        postGroupRepository.delete(postGroup);
+
+        postGroupRepository.deleteById(id);
     }
 
     public void addPost(Long postGroupId, Long postId, Integer orderIndex) {

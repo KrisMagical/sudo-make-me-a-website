@@ -9,6 +9,8 @@ import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @AllArgsConstructor
 @Transactional
@@ -67,5 +69,10 @@ public class LikeLogService {
         post.setLikeCount(likes);
         post.setDislikeCount(dislikes);
         postRepository.save(post);
+    }
+
+    public void deleteAllByPostIds(List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) return;
+        likeLogRepository.deleteByPostIdIn(postIds);
     }
 }

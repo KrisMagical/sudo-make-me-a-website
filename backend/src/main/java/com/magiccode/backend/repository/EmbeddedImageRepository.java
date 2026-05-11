@@ -12,4 +12,7 @@ public interface EmbeddedImageRepository extends JpaRepository<EmbeddedImage,Lon
     Optional<EmbeddedImage> findByIdAndOwnerTypeAndOwnerId(Long id, EmbeddedImage.OwnerType ownerType, Long ownerId);
 
     void deleteAllByOwnerTypeAndOwnerId(EmbeddedImage.OwnerType ownerType, Long ownerId);
+
+    List<EmbeddedImage> findAllByOwnerTypeAndOwnerIdIn(EmbeddedImage.OwnerType ownerType, List<Long> ownerIds);
+    void deleteByOwnerTypeAndOwnerIdIn(EmbeddedImage.OwnerType ownerType, List<Long> ownerIds);
 }

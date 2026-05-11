@@ -30,13 +30,24 @@ watch(searchKeyword, () => {
   fetchTimer = setTimeout(fetchCollections, 300)
 })
 
-const handleDelete = async (collection: PostGroupDto) => {
-  const deletePosts = confirm(
-      `Delete collection "${collection.name}"? Press "OK" to also delete all posts, "Cancel" to keep posts.`
-  )
+// 删除集合，保留文章
+const handleDeleteKeepPosts = async (collection: PostGroupDto) => {
+  if (!confirm(`Delete collection "${collection.name}"? Posts will be KEPT.`)) return
   try {
-    await collectionsApi.delete(collection.id, deletePosts)
-    notify('Collection deleted', 'success')
+    await collectionsApi.delete(collection.id, false)
+    notify('Collection deleted, posts kept', 'success')
+    fetchCollections()
+  } catch (error) {
+    notify('Failed to delete collection', 'error')
+  }
+}
+
+// 删除集合，同时删除所有文章
+const handleDeleteWithPosts = async (collection: PostGroupDto) => {
+  if (!confirm(`Delete collection "${collection.name}" AND ALL ITS POSTS? This action cannot be undone.`)) return
+  try {
+    await collectionsApi.delete(collection.id, true)
+    notify('Collection and all its posts deleted', 'success')
     fetchCollections()
   } catch (error) {
     notify('Failed to delete collection', 'error')
@@ -90,7 +101,7 @@ onUnmounted(() => {
           <th class="py-3 font-normal w-32">Slug</th>
           <th class="py-3 font-normal w-32">Posts</th>
           <th class="py-3 font-normal w-40">Date</th>
-          <th class="py-3 font-normal w-24 text-right">Actions</th>
+          <th class="py-3 font-normal w-48 text-right">Actions</th>
         </tr>
         </thead>
         <tbody class="text-sm">
@@ -113,14 +124,27 @@ onUnmounted(() => {
           <td class="py-4 font-mono text-xs text-zinc-500">{{ collection.slug }}</td>
           <td class="py-4">{{ collection.posts?.length || 0 }}</td>
           <td class="py-4 text-zinc-500">{{ new Date(collection.createdAt).toLocaleDateString() }}</td>
-          <td class="py-4 text-right space-x-4">
+          <td class="py-4 text-right space-x-2">
             <router-link
                 :to="`/admin/collections/edit/${collection.slug}`"
                 class="hover:text-black dark:hover:text-white"
             >
               EDIT
             </router-link>
-            <button @click="handleDelete(collection)" class="text-red-500 hover:font-bold">DEL</button>
+            <button
+                @click="handleDeleteKeepPosts(collection)"
+                class="text-yellow-600 hover:font-bold"
+                title="Delete collection but keep posts"
+            >
+              DEL_KEEP
+            </button>
+            <button
+                @click="handleDeleteWithPosts(collection)"
+                class="text-red-500 hover:font-bold"
+                title="Delete collection and all its posts"
+            >
+              DEL_ALL
+            </button>
           </td>
         </tr>
         </tbody>

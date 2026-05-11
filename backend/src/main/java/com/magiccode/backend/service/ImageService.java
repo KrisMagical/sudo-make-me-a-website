@@ -337,4 +337,13 @@ public class ImageService {
             this.url = url;
         }
     }
+
+    public void deleteAllByOwnerIds(EmbeddedImage.OwnerType ownerType, List<Long> ownerIds) {
+        if (ownerIds == null || ownerIds.isEmpty()) return;
+        List<EmbeddedImage> images = embeddedImageRepository.findAllByOwnerTypeAndOwnerIdIn(ownerType, ownerIds);
+        for (EmbeddedImage img : images) {
+            deleteFromOSS(img.getObjectKey());
+        }
+        embeddedImageRepository.deleteByOwnerTypeAndOwnerIdIn(ownerType, ownerIds);
+    }
 }
