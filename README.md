@@ -15,6 +15,8 @@ It handles the entire stack for you:
 - **Database** – Automatically creates a MySQL database (via Docker or your local installation) and imports sample data
 - **Apache integration** – Generates a production Apache virtual host configuration with **dynamic port detection**, reverse proxy, SPA routing, and **automatic HTTPS header forwarding**. You can specify your own domain name and optionally enable SSL during setup.
 - **Smart image handling** – Automatically compresses large images (>2MB) before upload to speed up page loads.
+- **Collections** – Group posts into custom collections, reorder them, and display them on the frontend; collections are fully manageable from the admin panel.
+- **Maintenance mode** – Quickly put your site into maintenance (or updating) mode from the admin panel; visitors see a custom message while admins can still access the backend.
 - **Simple setup** – Run the configuration script as `root`, then start the services as the `www-data` user. Everything is configured and ready.
 
 No manual database creation, no environment file tweaks, no dependency hell.  
@@ -218,6 +220,28 @@ No manual intervention needed – everything works seamlessly.
 
 ---
 
+## Additional Features
+
+### Collections
+- Create collections to group your posts (e.g., “Tutorials”, “News”, “Best of”).
+- Assign any existing post to one or more collections.
+- Order posts inside a collection by drag‑and‑drop (or use the up/down buttons).
+- Visitors can browse collections via the sidebar (switch between Categories and Collections) and see all posts belonging to a collection.
+- Each collection can have its own cover image and description.
+- In the admin panel, you can see at a glance how many posts are in each collection and quickly edit or delete them.
+
+### Maintenance Mode
+- Put your entire site into maintenance mode from the “Maintenance” section in the admin panel.
+- Choose between two display modes: **Maintenance** (general downtime) or **Updating** (short‑term deployment).
+- When enabled, all visitor requests are redirected to a custom maintenance page, while the admin panel remains accessible.
+- To disable, simply go back to the admin panel, turn off the mode, and provide your admin password.
+
+### Post Metadata
+- Each post now shows the categories and collections it belongs to directly on the frontend.
+- Clicking on a category or collection name takes you to the respective page, making navigation easier for your readers.
+
+---
+
 ## Changing the Default User Password Later
 
 You can change the password for user `gosling` at any time:
@@ -287,13 +311,19 @@ The start script now forcibly kills any process using the port before starting t
 This is usually because the temporary blob URLs were not replaced. In the browser console, check if the image uploads succeeded (look for network requests to `/api/posts/.../images`).  
 If they failed, the images remain as blob URLs – you can re-upload them after the post/page is saved (the editor will now have a valid ID and upload immediately).
 
+### Maintenance mode won't disable
+Make sure you are using the correct admin password (the one for user `gosling`). The password is verified on every update. Check the server logs for any SQL errors.
+
+### Collections not appearing in sidebar
+The sidebar has a switch between “Categories” and “Collections”. Make sure you have clicked on the “Collections” tab. If no collections exist yet, create one from the admin panel.
+
 ---
 
 ## What's Included
 
-- **Backend** – Spring Boot with Spring Data JPA, Spring Web, MySQL driver, and a simple REST API for blog posts.
-- **Frontend** – Vite + Vue 3, with a clean, Vim‑inspired design, and an editor with image/video embedding, LaTeX support, and auto‑compression of large images.
-- **Sample data** – A few blog posts and one user (`gosling` with password `123456` unless you changed it).
+- **Backend** – Spring Boot with Spring Data JPA, Spring Web, MySQL driver, and a simple REST API for blog posts, collections, and maintenance mode.
+- **Frontend** – Vite + Vue 3, with a clean, Vim‑inspired design, an editor with image/video embedding, LaTeX support, auto‑compression of large images, and full admin panels for posts, categories, collections, social links, and site settings.
+- **Sample data** – A few blog posts, one user (`gosling` with password `123456` unless you changed it), and a sample collection.
 - **Database** – Automatically configured with UTF‑8 support.
 - **Apache integration** – Ready‑to‑use production virtual host configuration with custom domain and optional SSL support.
 
