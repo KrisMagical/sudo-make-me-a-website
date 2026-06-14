@@ -1,0 +1,172 @@
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { publicApi } from '@/api/public'
+import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
+import type { CreateCommentRequest } from '@/types/api'
+
+const props = defineProps<{
+  postId: number;
+  parentId?: number;
+}>()
+
+const emit = defineEmits(['success', 'cancel'])
+
+const form = ref<CreateCommentRequest>({
+  name: '',
+  email: '',
+  content: '',
+  parentId: props.parentId
+})
+
+watch(() => props.parentId, (newVal) => {
+  form.value.parentId = newVal
+})
+
+const loading = ref(false)
+const error = ref('')
+const fieldErrors = ref<Record<string, string>>({})
+const success = ref(false)
+const successMessage = ref('')
+
+const submit = async () => {
+  // 基础验证
+  if (!form.value.name || !form.value.email || !form.value.content) {
+    error.value = 'All fields are required'
+    fieldErrors.value = {}
+    return
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email)) {
+    error.value = 'Invalid email format'
+    fieldErrors.value = {}
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+  fieldErrors.value = {}
+
+  try {
+    const created = await publicApi.addComment(props.postId, form.value) as any
+
+    success.value = true
+    successMessage.value = created?.status === 'APPROVED'
+        ? 'Comment submitted and published.'
+        : 'Comment submitted. It will appear after review.'
+
+    form.value = {
+      name: '',
+      email: '',
+      content: '',
+      parentId: undefined
+    }
+
+    emit('success')
+  } catch (err: any) {
+    error.value = getApiErrorMessage(err, 'Failed to submit comment')
+    fieldErrors.value = getApiFieldErrors(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+const cancelReply = () => {
+  form.value.parentId = undefined
+  emit('cancel')
+}
+
+const onMouseEnter = (e: Event) => {
+  const el = e.target as HTMLElement
+  if (el) {
+    el.style.backgroundColor = '#27272a'
+  }
+}
+
+const onMouseLeave = (e: Event) => {
+  const el = e.target as HTMLElement
+  if (el) {
+    el.style.backgroundColor = '#18181b'
+  }
+}
+</script>
+
+<template>
+  <div class="border border-zinc-200 dark:border-zinc-800 p-6">
+    <h3 class="text-sm font-bold uppercase tracking-widest mb-4">
+      {{ props.parentId ? 'Reply to Comment' : 'Post Comment' }}
+    </h3>
+
+    <div v-if="success" class="mb-4 p-3 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm">
+      {{ successMessage }}
+    </div>
+
+    <div v-if="error" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">
+      {{ error }}
+      <ul v-if="Object.keys(fieldErrors).length" class="mt-2 space-y-1 font-mono text-xs">
+        <li v-for="(msg, field) in fieldErrors" :key="field">
+          {{ field }}: {{ msg }}
+        </li>
+      </ul>
+    </div>
+
+    <form @submit.prevent="submit" class="space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs uppercase tracking-widest mb-1">Name</label>
+          <input
+              v-model="form.name"
+              type="text"
+              required
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              :disabled="loading"
+          />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-widest mb-1">Email</label>
+          <input
+              v-model="form.email"
+              type="email"
+              required
+              class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+              :disabled="loading"
+          />
+          <p class="text-xs text-zinc-500 mt-1">Your email will not be published.</p>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs uppercase tracking-widest mb-1">Comment</label>
+        <textarea
+            v-model="form.content"
+            required
+            rows="4"
+            class="w-full bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
+            :disabled="loading"
+        ></textarea>
+      </div>
+
+      <div class="flex justify-end items-center gap-3">
+        <button
+            v-if="props.parentId"
+            type="button"
+            @click="cancelReply"
+            class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            :disabled="loading"
+        >
+          Cancel
+        </button>
+
+        <button
+            type="submit"
+            :disabled="loading"
+            class="px-6 py-2 text-white text-sm font-bold uppercase tracking-tighter transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :style="{ backgroundColor: loading ? undefined : '#18181b' }"
+            @mouseenter="onMouseEnter"
+            @mouseleave="onMouseLeave"
+        >
+          {{ loading ? 'Submitting...' : (props.parentId ? 'Submit Reply' : 'Submit Comment') }}
+        </button>
+      </div>
+    </form>
+  </div>
+</template>
