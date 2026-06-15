@@ -4,7 +4,7 @@ public final class SecurityConstants {
     private SecurityConstants() {}
 
     public static final String[] DOCS = {
-            "/login", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
+            "/login", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health", "/actuator/info"
     };
 
     public static final String[] PUBLIC_GET = {

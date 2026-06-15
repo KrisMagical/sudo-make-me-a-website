@@ -24,3 +24,20 @@ export const getApiErrorMessage = (error: unknown, fallback = 'Request failed') 
   if ((error as any)?.message) return (error as any).message
   return fallback
 }
+
+export const getApiRequestId = (error: unknown): string | undefined => {
+  const headers = (error as any)?.response?.headers
+  if (!headers) return undefined
+
+  if (typeof headers.get === 'function') {
+    return headers.get('x-request-id') || headers.get('X-Request-Id') || undefined
+  }
+
+  return headers['x-request-id'] || headers['X-Request-Id']
+}
+
+export const getApiErrorMessageWithRequestId = (error: unknown, fallback = 'Request failed') => {
+  const message = getApiErrorMessage(error, fallback)
+  const requestId = getApiRequestId(error)
+  return requestId ? `${message} [requestId: ${requestId}]` : message
+}

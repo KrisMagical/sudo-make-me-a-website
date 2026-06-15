@@ -1,0 +1,17 @@
+.git
+.idea
+node_modules
+dist
+coverage
+.frontend-port
+.backend-port
+logs
+*.log
+.env
+.env.*
+!.env.example
+*.iml
+*.tmp
+*.swp
+Thumbs.db
+.DS_Store

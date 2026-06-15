@@ -2,6 +2,7 @@ package com.magiccode.backend.repository;
 
 import com.magiccode.backend.model.Comment;
 import com.magiccode.backend.model.CommentStatus;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,8 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Repository
-public interface CommentRepository extends JpaRepository<Comment, Long> {
+public interface CommentRepository extends JpaRepository<Comment, Long>, JpaSpecificationExecutor<Comment> {
     List<Comment> findByPostIdAndStatusOrderByCreatedAtAsc(Long postId, CommentStatus status);
+
+    long countByStatus(CommentStatus status);
 
     @Query("SELECT c FROM Comment c JOIN c.post p WHERE " +
             "LOWER(c.content) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +

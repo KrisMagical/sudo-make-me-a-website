@@ -11,6 +11,22 @@ export interface LoginResponse {
     role: string;
 }
 
+export interface AdminMeResponse {
+    username: string;
+    role: string;
+}
+
+export interface ApiErrorResponse {
+    message: string;
+    code?: string;
+    errors?: Record<string, string>;
+}
+
+export interface ValidationErrorResponse {
+    message: 'Validation failed' | string;
+    errors: Record<string, string>;
+}
+
 export interface ImageDto {
     id: number;
     ownerType: 'POST' | 'COLLECTION' | 'HOME' | 'SOCIAL' | 'SITE_AVATAR' | 'FAVICON' | 'APPLE_TOUCH_ICON';
@@ -101,7 +117,7 @@ export interface SocialDto {
 export interface LikeResponseDto {
     likes: number;
     dislikes: number;
-    message: string;
+    message?: string;
 }
 
 export interface CreateCommentRequest {
@@ -154,6 +170,35 @@ export interface CommentSearchResult {
     parentExists: boolean;
     parentName?: string;
     parentContent?: string;
+    moderationReason?: string | null;
+}
+
+export type CommentStatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
+export type BulkCommentAction = 'APPROVE' | 'REJECT' | 'DELETE';
+
+export interface AdminCommentPageResponse {
+    items: CommentSearchResult[];
+    page: number;
+    size: number;
+    total: number;
+    totalPages: number;
+}
+
+export interface CommentStatsDto {
+    pending: number;
+    approved: number;
+    rejected: number;
+    total: number;
+}
+
+export interface BulkCommentRequest {
+    commentIds: number[];
+    action: BulkCommentAction;
+}
+
+export interface BulkCommentResponse {
+    action: BulkCommentAction;
+    affected: number;
 }
 
 export interface PageResponse<T> {

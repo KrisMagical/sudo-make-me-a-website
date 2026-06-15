@@ -1,9 +1,6 @@
 package com.magiccode.backend.config;
 
 import com.magiccode.backend.service.MyUserDetailsService;
-import io.swagger.v3.oas.models.OpenAPI;
-import io.swagger.v3.oas.models.info.Info;
-import io.swagger.v3.oas.models.info.License;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -120,15 +117,6 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();
-    }
-
-    @Bean
-    public OpenAPI blogServiceAPI() {
-        return new OpenAPI()
-                .info(new Info().title("Blog Service API")
-                        .description("This is the REST API for Blog Service")
-                        .version("v0.0.1")
-                        .license(new License().name("Apache 2.0")));
     }
 
 }

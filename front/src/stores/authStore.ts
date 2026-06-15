@@ -2,6 +2,7 @@ import {defineStore} from 'pinia';
 import {ref, computed} from 'vue';
 import {notify} from '@/utils/feedback';
 import {meApi} from '@/api/auth';
+import type {AdminMeResponse} from '@/types/api';
 
 export const useAuthStore = defineStore('auth', () => {
     const token = ref(localStorage.getItem('token') || '');
@@ -110,7 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
         if (verified.value) return true;
         try {
-            const me = await meApi() as any;
+            const me = await meApi() as AdminMeResponse;
             username.value = me.username;
             role.value = me.role;
             localStorage.setItem('username', me.username);

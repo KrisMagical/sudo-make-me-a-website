@@ -42,4 +42,7 @@ public class Comment {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private CommentStatus status = CommentStatus.PENDING;
+
+    @Column(name = "moderation_reason", length = 255)
+    private String moderationReason;
 }

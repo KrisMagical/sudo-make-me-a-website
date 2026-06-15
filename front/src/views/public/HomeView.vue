@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { defineAsyncComponent, ref, onMounted } from 'vue'
 import { publicApi } from '@/api/public'
 import type { HomeProfileDto, PostSummaryDto, CategoryDto } from '@/types/api'
-import SmartContent from '@/components/public/SmartContent.vue'
 import ArticleCard from '@/components/public/ArticleCard.vue'
-import SearchModal from '@/components/public/SearchModal.vue'
 import SocialLinks from '@/components/public/SocialLinks.vue'
+
+const SmartContent = defineAsyncComponent(() => import('@/components/public/SmartContent.vue'))
+const SearchModal = defineAsyncComponent(() => import('@/components/public/SearchModal.vue'))
 
 const home = ref<HomeProfileDto | null>(null)
 const recentPosts = ref<PostSummaryDto[]>([])

@@ -1,59 +1,51 @@
 # sudo-make-me-a-website
 
-A small personal blog stack with a Spring Boot backend and a Vue/Vite frontend. The project favors a minimal Vim/terminal-inspired interface and keeps the architecture intentionally simple.
+[![CI](https://github.com/KrisMagical/sudo-make-me-a-website/actions/workflows/ci.yml/badge.svg)](https://github.com/KrisMagical/sudo-make-me-a-website/actions/workflows/ci.yml)
+![Java 21](https://img.shields.io/badge/Java-21-blue)
+![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-green)
+![Vue 3](https://img.shields.io/badge/Vue-3-42b883)
+![Vite 8](https://img.shields.io/badge/Vite-8-646cff)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ed)
+![License MIT](https://img.shields.io/badge/License-MIT-yellow)
 
-## Stack
+A self-hosted minimalist blog system with comment moderation, admin tools,
+Docker deployment, OpenAPI docs, and production operations guides.
 
-- Backend: Spring Boot, Spring Security, Spring Data JPA, MySQL
-- Frontend: Vue 3, Vite, Pinia, UnoCSS
-- Storage: Aliyun OSS for uploaded images
-- Optional production proxy: Apache
+The frontend keeps a Vim/terminal-inspired visual style. The backend is a
+Spring Boot REST API designed for deliberate, manual production operations
+rather than automatic schema mutation.
 
-## Security First
+Screenshots can be added under `docs/assets/`.
 
-Production deployments must configure an administrator explicitly. The application no longer creates a public weak-password admin account during normal startup.
+## Features
 
-Set these environment variables before the first production start if you want the backend to create the initial administrator:
+- Minimal terminal-like public blog UI.
+- Post management with categories and collections.
+- Comment moderation with `PENDING`, `APPROVED`, and `REJECTED` states.
+- Admin comment filters, search, pagination, stats, and bulk actions.
+- Local anti-spam rules without sending comments to external services.
+- Like/dislike deduplication and reaction switching.
+- Media upload and media library support.
+- Maintenance mode controls.
+- Admin authentication with bearer tokens.
+- Unified API error response using `message` and `errors`.
+- OpenAPI / Swagger UI in development.
+- `X-Request-Id` tracing, Actuator health checks, and rolling backend logs.
+- Docker Compose deployment with MySQL, backend, and Nginx frontend.
+- Manual database migration, backup, restore, rollback, and release docs.
 
-```bash
-export BLOG_ADMIN_USERNAME="your-admin-name"
-export BLOG_ADMIN_PASSWORD="use-a-strong-password"
-```
+## Tech Stack
 
-If either variable is missing, no administrator is created automatically.
+- Backend: Java 21, Spring Boot 3.5.5, Spring Security, Spring Data JPA,
+  MySQL 8, H2 for tests.
+- Frontend: Vue 3, Vite 8, TypeScript, Pinia, UnoCSS.
+- Media: Aliyun OSS-compatible upload integration.
+- Ops: Docker, Docker Compose, Nginx, Spring Boot Actuator, Logback.
+- Docs: OpenAPI / Swagger UI, production runbook, migration notes.
 
-Do not use example passwords in production. Do not enable automatic sample data initialization in production. Do not use `ddl-auto=update` as a production migration strategy.
+## Quick Start
 
-## Profiles
-
-Common settings live in `backend/src/main/resources/application.properties`.
-
-Development profile:
-
-```properties
-spring.jpa.hibernate.ddl-auto=update
-spring.sql.init.mode=always
-```
-
-Run locally with:
-
-```bash
-cd backend
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
-```
-
-Production profile:
-
-```properties
-spring.jpa.hibernate.ddl-auto=validate
-spring.sql.init.mode=never
-```
-
-The production start script runs the backend with `--spring.profiles.active=prod`.
-
-This project does not currently include Flyway or Liquibase. For a maintained production blog, manage schema changes deliberately before deployment and avoid relying on Hibernate to mutate production tables.
-
-## Local Development
+### Local Development
 
 Backend:
 
@@ -62,17 +54,54 @@ cd backend
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
+Or use the Maven Wrapper:
+
+```bash
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
 Frontend:
 
 ```bash
 cd front
-npm install
+npm ci
 npm run dev
 ```
 
-The Vite dev server proxies `/api` to the backend target from `.backend-port`, or `http://localhost:8080` if that file is absent.
+Vite 8 requires Node.js `^20.19.0 || >=22.12.0`. The Vite dev server proxies
+`/api` to the backend target from `.backend-port`, or `http://localhost:8080`
+if that file is absent.
 
-## Tests
+### Docker Compose
+
+```bash
+cp .env.example .env
+# Edit .env and replace every placeholder with deployment-specific values.
+docker compose --env-file .env config
+docker compose up -d --build
+```
+
+Production database schema changes are manual. For a new production database,
+review and execute `docs/migrations/bootstrap-schema.sql` first. For an existing
+database, run the numbered migrations in `docs/migrations` before starting the
+new backend version. Containers do not run migrations automatically.
+
+Use [docs/production-runbook.md](docs/production-runbook.md) as the production
+deployment entry point.
+
+## API Documentation
+
+In the `dev` profile:
+
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+
+In the `prod` profile, Swagger UI and OpenAPI JSON are disabled by default. Do
+not expose admin API docs publicly in production. See [docs/api.md](docs/api.md)
+for the API overview.
+
+## Testing
 
 Backend:
 
@@ -81,62 +110,76 @@ cd backend
 mvn test
 ```
 
+Maven Wrapper:
+
+```bash
+cd backend
+./mvnw test
+# Windows:
+mvnw.cmd test
+```
+
 Frontend:
 
 ```bash
 cd front
+npm ci
+npm audit
 npm run test:run
-```
-
-Build frontend:
-
-```bash
-cd front
 npm run build
 ```
 
-## Comments
+Docker config:
 
-Visitor comments are moderated:
+```bash
+docker compose --env-file .env.example config --quiet
+```
 
-- New visitor comments are saved as `PENDING`.
-- Public comment lists return only `APPROVED` comments.
-- Admin users can approve, reject, or delete comments from the admin comment tools.
-- Admin replies are published as `APPROVED`.
+Backend test scope is summarized in [docs/testing.md](docs/testing.md).
 
-The frontend success message reflects the status returned by the backend.
+## Documentation
 
-## Reactions
+- [docs/architecture.md](docs/architecture.md) - system structure and request
+  flow.
+- [docs/features.md](docs/features.md) - feature inventory.
+- [docs/api.md](docs/api.md) - API contract overview.
+- [docs/docker.md](docs/docker.md) - Docker usage.
+- [docs/production-runbook.md](docs/production-runbook.md) - production
+  deployment, upgrade, rollback, and incident flow.
+- [docs/database-migration.md](docs/database-migration.md) - schema migration
+  strategy.
+- [docs/backup-restore.md](docs/backup-restore.md) - backup and restore notes.
+- [docs/operations.md](docs/operations.md) - health checks, request ids, and
+  logs.
+- [docs/testing.md](docs/testing.md) - test strategy.
+- [docs/release-checklist.md](docs/release-checklist.md) - release checklist.
+- [docs/security-audit-notes.md](docs/security-audit-notes.md) - dependency
+  audit notes.
+- [CHANGELOG.md](CHANGELOG.md) - release history.
+- [ROADMAP.md](ROADMAP.md) - planned work.
 
-Post like/dislike records are deduplicated by post and client identifier. Repeating the same reaction does not increase the count. Switching from like to dislike updates the existing record and recalculates counts.
+## Security Notes
 
-## Production Deployment Checklist
+- No default admin password is created during normal startup.
+- Initial admin creation is controlled by `BLOG_ADMIN_USERNAME` and
+  `BLOG_ADMIN_PASSWORD`.
+- Remove admin bootstrap variables after the first admin account exists.
+- Do not commit `.env`, logs, backups, tokens, database passwords, or OSS
+  secrets.
+- Production keeps `spring.jpa.hibernate.ddl-auto=validate` and
+  `spring.sql.init.mode=never`.
+- Production Swagger UI and OpenAPI JSON are disabled by default.
+- Production exposes only the Actuator health endpoint by default.
+- Database migrations are reviewed and executed manually.
 
-- Set `SPRING_PROFILES_ACTIVE=prod` or use `start.sh`.
-- Set strong `BLOG_ADMIN_USERNAME` and `BLOG_ADMIN_PASSWORD` for first admin creation.
-- Remove admin bootstrap variables after the account exists if your deployment process allows it.
-- Keep `spring.sql.init.mode=never` in production.
-- Keep `spring.jpa.hibernate.ddl-auto=validate` or a stricter strategy in production.
-- Configure real MySQL credentials outside source control.
-- Configure OSS credentials through environment variables or a protected env file.
-- Build frontend assets with `npm run build`.
-- Run `mvn test` and `npm run test:run` before release.
+Report security issues using [SECURITY.md](SECURITY.md).
 
-## Scripts
+## Contributing
 
-`configure.sh` is the interactive setup helper for database, frontend build, backend build, Apache config, and OSS env creation.
-
-`start.sh` starts the already-built backend JAR as `www-data` using the production profile. It expects:
-
-- `backend/target/*.jar`
-- `.backend-port`
-- `.env.oss`
-- `front/dist` for Apache/static serving
-
-## Frontend Notes
-
-The visual direction is intentionally minimal, monochrome, and terminal-like. Keep UI additions lightweight: inline errors, compact buttons, simple status labels, and existing toast feedback.
+Contributions are welcome when they keep the project small, self-hostable, and
+maintainable. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and use the Issue
+and Pull Request templates when opening work on GitHub.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

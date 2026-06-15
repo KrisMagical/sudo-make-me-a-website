@@ -21,11 +21,13 @@ public interface CommentMapper {
     @Mapping(target = "author", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "moderationReason", ignore = true)
     Comment toCommentEntity(CreateCommentRequest request);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "post", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "moderationReason", ignore = true)
     Comment toCommentEntity(CommentDto dto);
 }

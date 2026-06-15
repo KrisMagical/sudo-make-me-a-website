@@ -1,0 +1,13 @@
+.git
+.idea
+target
+logs
+*.log
+.env
+.env.*
+!.env.example
+*.iml
+*.tmp
+*.swp
+Thumbs.db
+.DS_Store

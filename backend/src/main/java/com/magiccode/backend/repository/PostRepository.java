@@ -29,7 +29,9 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     // Page<Post> findByCategory(Category category, Pageable pageable);
     Page<Post> findByCategoryAndSlugNot(Category category, String slug, Pageable pageable);
+    Page<Post> findByCategoryAndPublishedTrueAndSlugNot(Category category, String slug, Pageable pageable);
     List<Post> findBySlugNotOrderByCreatedAtDesc(String slug, Pageable pageable);
+    List<Post> findByPublishedTrueAndSlugNotOrderByCreatedAtDesc(String slug, Pageable pageable);
 
     @Query("SELECT p FROM Post p WHERE p.category.slug = :slug AND p.published = true AND p.slug != :draftSlug " +
             "AND (p.title LIKE %:keyword% OR p.content LIKE %:keyword%) " +

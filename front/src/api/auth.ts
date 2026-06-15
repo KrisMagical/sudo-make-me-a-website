@@ -1,24 +1,10 @@
 import request from '@/utils/request';
-
-// 定义类型 (对应 components/schemas/LoginRequest)
-export interface LoginRequest {
-  username?: string;
-  password?: string;
-}
-
-// 定义类型 (对应 components/schemas/LoginResponse)
-export interface LoginResponse {
-  token: string;
-  tokenType: string;
-  expiresIn: number;
-  username: string;
-  role: string;
-}
+import type { AdminMeResponse, LoginRequest, LoginResponse } from '@/types/api';
 
 export const loginApi = (data: LoginRequest) => {
-  return request.post<any, LoginResponse>('/login', data);
+  return request.post<LoginResponse>('/login', data);
 };
 
 export const meApi = () => {
-  return request.get<{ username: string; role: string }>('/api/admin/auth/me');
+  return request.get<AdminMeResponse>('/api/admin/auth/me');
 };

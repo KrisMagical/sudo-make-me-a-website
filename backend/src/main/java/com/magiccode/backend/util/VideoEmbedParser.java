@@ -72,7 +72,7 @@ public class VideoEmbedParser {
 
             // Vimeo
             if (host.contains("vimeo.com")) {
-                String path = uri.getPath(); // /123456
+                String path = uri.getPath(); // /BV1xx411c7mD
                 if (path != null && path.length() > 1) {
                     String id = path.substring(1).split("/")[0];
                     if (id.matches("\\d+")) {
@@ -101,7 +101,7 @@ public class VideoEmbedParser {
                         return new VideoCandidate("BILIBILI", url, embed);
                     }
 
-                    // Handle av format: av123456
+                    // Handle av format: av987654
                     if (idPart.startsWith("av") && idPart.length() > 2) {
                         String aid = idPart.substring(2);
                         if (aid.matches("\\d+")) {

@@ -6,11 +6,13 @@ import com.magiccode.backend.repository.MaintenanceConfigRepository;
 import com.magiccode.backend.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MaintenanceService {
@@ -50,6 +52,12 @@ public class MaintenanceService {
         config.setEnabled(enabled);
         config.setMode(mode);
         config.setUpdatedAt(LocalDateTime.now());
-        return repository.save(config);
+        MaintenanceConfig saved = repository.save(config);
+        if (enabled) {
+            log.warn("maintenance enabled mode={} username={}", mode, username);
+        } else {
+            log.info("maintenance disabled mode={} username={}", mode, username);
+        }
+        return saved;
     }
 }

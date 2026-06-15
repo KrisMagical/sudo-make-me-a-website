@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run backend tests
+        run: bash ./mvnw test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+      - name: Run frontend tests
+        run: npm run test:run
+      - name: Build frontend
+        run: npm run build
+
+  static-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check frontend feedback and error patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --exclude-dir=node_modules --exclude-dir=dist -n "alert(" front/src; then
+            echo "Do not use alert() as primary user feedback."
+            exit 1
+          fi
+          if grep -R --exclude-dir=node_modules --exclude-dir=dist -n "localStorage\.clear" front/src; then
+            echo "Do not clear all localStorage during auth flows."
+            exit 1
+          fi
+          if grep -R --exclude-dir=node_modules --exclude-dir=dist -n "response\.data\.error" front/src; then
+            echo "Use response.data.message/errors instead of response.data.error."
+            exit 1
+          fi
+          if grep -R --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=target -n $'\357\277\275' .; then
+            echo "Replacement-character mojibake found."
+            exit 1
+          fi
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend Docker image
+        run: docker build -t blog-backend:test ./backend
+      - name: Build frontend Docker image
+        run: docker build -t blog-frontend:test ./front
+      - name: Validate compose config
+        run: |
+          cp .env.example .env
+          docker compose config

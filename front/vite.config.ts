@@ -49,6 +49,58 @@ export default defineConfig(async ({ command, mode }) => {
     test: {
       environment: 'jsdom',
       globals: true
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('md-editor-v3')) return 'md-editor'
+            if (id.includes('@codemirror/language-data')) return 'codemirror-language-data'
+            if (id.includes('@codemirror/lang-angular')) return 'codemirror-lang-web'
+            if (id.includes('@codemirror/lang-html')) return 'codemirror-lang-web'
+            if (id.includes('@codemirror/lang-javascript')) return 'codemirror-lang-web'
+            if (id.includes('@codemirror/lang-vue')) return 'codemirror-lang-web'
+            if (id.includes('@codemirror/lang-xml')) return 'codemirror-lang-web'
+            if (id.includes('@codemirror/lang-css')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-json')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-less')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-sass')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-markdown')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-yaml')) return 'codemirror-lang-style'
+            if (id.includes('@codemirror/lang-cpp')) return 'codemirror-lang-systems'
+            if (id.includes('@codemirror/lang-go')) return 'codemirror-lang-systems'
+            if (id.includes('@codemirror/lang-rust')) return 'codemirror-lang-systems'
+            if (id.includes('@codemirror/lang-java')) return 'codemirror-lang-jvm'
+            if (id.includes('@codemirror/lang-sql')) return 'codemirror-lang-jvm'
+            if (id.includes('@codemirror/lang-php')) return 'codemirror-lang-script'
+            if (id.includes('@codemirror/lang-python')) return 'codemirror-lang-script'
+            if (id.includes('@codemirror/lang-jinja')) return 'codemirror-lang-template'
+            if (id.includes('@codemirror/lang-liquid')) return 'codemirror-lang-template'
+            if (id.includes('@codemirror/lang-wast')) return 'codemirror-lang-extra'
+            if (id.includes('@codemirror/lang-')) return 'codemirror-lang-extra'
+            if (id.includes('@codemirror/view')) return 'codemirror-view'
+            if (id.includes('@codemirror/state')) return 'codemirror-state'
+            if (id.includes('@codemirror/language')) return 'codemirror-language'
+            if (id.includes('@codemirror/autocomplete')) return 'codemirror-tools'
+            if (id.includes('@codemirror/commands')) return 'codemirror-tools'
+            if (id.includes('@codemirror/search')) return 'codemirror-tools'
+            if (id.includes('@codemirror/lint')) return 'codemirror-tools'
+            if (id.includes('@codemirror') || id.includes('codemirror')) return 'codemirror-shell'
+            if (id.includes('@lezer')) return 'lezer'
+            if (id.includes('style-mod') || id.includes('w3c-keyname') || id.includes('crelt')) return 'codemirror-core'
+            if (id.includes('markdown-it')) return 'markdown-it'
+            if (id.includes('@tiptap') || id.includes('tiptap-markdown')) return 'tiptap'
+            if (id.includes('katex')) return 'math'
+            if (id.includes('marked')) return 'markdown'
+            if (id.includes('@iconify')) return 'icons'
+            if (id.includes('axios')) return 'http'
+            if (id.includes('unocss') || id.includes('@unocss')) return 'uno'
+            if (id.includes('vue') || id.includes('pinia')) return 'vue-vendor'
+            return 'vendor'
+          }
+        }
+      }
     }
   }
 })

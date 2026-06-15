@@ -18,8 +18,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -47,7 +49,7 @@ public class PostService {
         if (category == null) {
             throw new RuntimeException("Category Not Found.");
         }
-        Page<Post> postPage = postRepository.findByCategoryAndSlugNot(category, DRAFT_SLUG, pageable);
+        Page<Post> postPage = postRepository.findByCategoryAndPublishedTrueAndSlugNot(category, DRAFT_SLUG, pageable);
         return postPage.map(postSummaryMapper::toPostSummaryDto);
     }
 
@@ -67,7 +69,7 @@ public class PostService {
 
             return dto;
         } else {
-            throw new RuntimeException("Post Not Found.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Post Not Found");
         }
     }
 
@@ -106,7 +108,7 @@ public class PostService {
 
     public PostDetailDto updatePost(Long id, PostDetailDto updatePostDetailDto, String categorySlug) {
         Post post = postRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Post Not Found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post Not Found"));
 
         boolean contentChanged = false;
         boolean isDraft = post.getSlug().equals(DRAFT_SLUG);
@@ -172,7 +174,7 @@ public class PostService {
         }
         Post post = postRepository.findBySlug(slug);
         if (post == null) {
-            throw new RuntimeException("Post Not Found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Post Not Found");
         }
         Long postId = post.getId();
         postGroupItemRepository.deleteByPost(post);
@@ -185,7 +187,7 @@ public class PostService {
     }
 
     public List<PostSummaryDto> getRecentPosts(int limit) {
-        return postRepository.findBySlugNotOrderByCreatedAtDesc(DRAFT_SLUG, PageRequest.of(0, limit))
+        return postRepository.findByPublishedTrueAndSlugNotOrderByCreatedAtDesc(DRAFT_SLUG, PageRequest.of(0, limit))
                 .stream()
                 .map(postSummaryMapper::toPostSummaryDto)
                 .toList();

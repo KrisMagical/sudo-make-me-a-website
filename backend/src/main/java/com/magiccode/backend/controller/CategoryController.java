@@ -1,7 +1,11 @@
 package com.magiccode.backend.controller;
 
+import com.magiccode.backend.config.OpenApiConfig;
 import com.magiccode.backend.dto.CategoryDto;
 import com.magiccode.backend.service.CategoryService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,10 +18,11 @@ import java.util.List;
 @RestController
 @AllArgsConstructor
 @RequestMapping("/api/categories")
-
+@Tag(name = "Admin Posts")
 public class CategoryController {
     private CategoryService categoryService;
 
+    @Operation(summary = "List categories", description = "Returns public post categories.")
     @GetMapping
     public ResponseEntity<List<CategoryDto>> getAllCategories() {
         List<CategoryDto> categoryDto = categoryService.getAllCategories();
@@ -26,6 +31,8 @@ public class CategoryController {
         }
         return ResponseEntity.ok(categoryDto);
     }
+    @Operation(summary = "Create category", description = "Creates a category as an authenticated admin.")
+    @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH)
     @PreAuthorize("hasRole('ROOT')")
     @PostMapping
     public ResponseEntity<CategoryDto> createCategory(@RequestBody CategoryDto categoryDto) {
@@ -35,6 +42,8 @@ public class CategoryController {
         }
         return new ResponseEntity<>(categoryDto_save, HttpStatus.OK);
     }
+    @Operation(summary = "Update category", description = "Updates a category by name as an authenticated admin.")
+    @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH)
     @PreAuthorize("hasRole('ROOT')")
     @PutMapping("/{name}")
     public ResponseEntity<CategoryDto> updateCategory(@PathVariable String name, @RequestBody CategoryDto categoryDto) {
@@ -44,6 +53,8 @@ public class CategoryController {
         }
         return new ResponseEntity<>(categoryDto_update, HttpStatus.OK);
     }
+    @Operation(summary = "Delete category", description = "Deletes a category by name as an authenticated admin.")
+    @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH)
     @PreAuthorize("hasRole('ROOT')")
     @DeleteMapping("/{name}")
     public ResponseEntity<String> deleteCategory(@PathVariable String name) {

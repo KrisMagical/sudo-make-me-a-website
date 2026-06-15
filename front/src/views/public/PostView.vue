@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { defineAsyncComponent, ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { publicApi } from '@/api/public'
-import SmartContent from '@/components/public/SmartContent.vue'
 import CommentForm from '@/components/public/CommentForm.vue'
 import CommentNode from '@/components/public/CommentNode.vue'
 import { notify } from '@/utils/feedback'
@@ -11,6 +10,7 @@ import { formatDate } from '@/utils/date'
 import type { CommentDto, PostDetailDto, LikeResponseDto } from '@/types/api'
 
 const route = useRoute()
+const SmartContent = defineAsyncComponent(() => import('@/components/public/SmartContent.vue'))
 
 const post = ref<PostDetailDto | null>(null)
 const comments = ref<CommentDto[]>([])
@@ -198,12 +198,26 @@ onMounted(loadData)
 
 <style scoped>
 .prose pre {
-  @apply bg-zinc-100 dark:bg-zinc-800 rounded-md p-4 overflow-x-auto;
+  background: #f4f4f5;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  overflow-x: auto;
 }
 .prose code {
-  @apply font-mono text-sm;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875rem;
 }
 .prose blockquote {
-  @apply border-l-4 border-zinc-300 dark:border-zinc-700 pl-4 italic text-zinc-600 dark:text-zinc-400;
+  border-left: 4px solid #d4d4d8;
+  padding-left: 1rem;
+  font-style: italic;
+  color: #52525b;
+}
+.dark .prose pre {
+  background: #27272a;
+}
+.dark .prose blockquote {
+  border-left-color: #3f3f46;
+  color: #a1a1aa;
 }
 </style>

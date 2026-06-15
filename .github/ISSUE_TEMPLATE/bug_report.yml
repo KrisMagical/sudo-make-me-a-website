@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible bug.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the steps needed to reproduce the problem.
+      placeholder: |
+        1. Start backend with ...
+        2. Open ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend
+        - Frontend
+        - Docker / deployment
+        - Database migration
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: request-id
+    attributes:
+      label: X-Request-Id
+      description: If an API request failed, paste the response request id.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Java, Node, Docker, browser, profile, and database.
+      placeholder: "Windows 11, Java 21, Node 22, Docker Desktop, profile=dev"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove passwords, tokens, Authorization headers, database URLs, and OSS secrets.
+      render: text

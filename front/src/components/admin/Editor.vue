@@ -262,8 +262,23 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .md-editor-icon-btn {
-  @apply flex items-center justify-center w-8 h-8 rounded-md transition-colors;
-  @apply text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800;
+  align-items: center;
+  border-radius: 0.375rem;
+  color: #52525b;
+  display: flex;
+  height: 2rem;
+  justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  width: 2rem;
+}
+.md-editor-icon-btn:hover {
+  background: #f4f4f5;
+}
+.dark .md-editor-icon-btn {
+  color: #a1a1aa;
+}
+.dark .md-editor-icon-btn:hover {
+  background: #27272a;
 }
 
 :deep(.md-editor) {

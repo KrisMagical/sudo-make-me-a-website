@@ -1,85 +1,84 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROFILE="${1:-${SPRING_PROFILES_ACTIVE:-dev}}"
 
-echo -e "${BLUE}>> Starting blog backend in production mode${NC}"
+case "$PROFILE" in
+  dev|prod|test) ;;
+  *)
+    echo "Unsupported profile: $PROFILE"
+    echo "Usage: $0 [dev|prod|test]"
+    exit 1
+    ;;
+esac
 
-if [ "$(whoami)" != "www-data" ]; then
-  echo -e "${RED}This script must be run as www-data.${NC}"
-  echo -e "${YELLOW}Use: sudo -u www-data ./start.sh${NC}"
-  exit 1
-fi
+echo "Starting sudo-make-me-a-website"
+echo "Profile: $PROFILE"
 
-JAR_FILE=$(find backend/target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -1)
-if [ -z "$JAR_FILE" ]; then
-  echo -e "${RED}Backend JAR not found. Run ./configure.sh first.${NC}"
-  exit 1
-fi
-echo -e "${GREEN}Found backend JAR: $JAR_FILE${NC}"
+if [[ "$PROFILE" == "prod" ]]; then
+  echo "Production mode: confirm database backup and migrations are complete."
+  echo "Production mode: confirm a strong admin password is configured for first bootstrap."
+  echo "Production mode: this script will not run schema migrations."
 
-OSS_ENV_FILE=".env.oss"
-if [ -f "$OSS_ENV_FILE" ]; then
-  echo -e "${BLUE}Loading OSS environment variables...${NC}"
-  # shellcheck disable=SC1090
-  source "$OSS_ENV_FILE"
-else
-  echo -e "${RED}Missing $OSS_ENV_FILE. Run ./configure.sh first.${NC}"
-  exit 1
-fi
-
-if [ -z "${OSS_ACCESS_KEY_ID:-}" ] || [ -z "${OSS_ACCESS_KEY_SECRET:-}" ]; then
-  echo -e "${RED}OSS credentials are missing from $OSS_ENV_FILE.${NC}"
-  exit 1
-fi
-
-BACKEND_PORT_FILE=".backend-port"
-if [ ! -f "$BACKEND_PORT_FILE" ]; then
-  echo -e "${RED}Missing $BACKEND_PORT_FILE. Run ./configure.sh first.${NC}"
-  exit 1
-fi
-BACKEND_PORT=$(grep -oP '(?<=:)\d+' "$BACKEND_PORT_FILE" || echo "8080")
-echo -e "${GREEN}Using backend port: $BACKEND_PORT${NC}"
-
-if [ -f "backend.pid" ]; then
-  OLD_PID=$(cat backend.pid)
-  if ps -p "$OLD_PID" > /dev/null; then
-    echo -e "${YELLOW}Stopping previous backend instance: $OLD_PID${NC}"
-    kill "$OLD_PID"
-    sleep 2
+  if [[ "$(id -un)" != "www-data" ]]; then
+    echo "Production start should run as www-data."
+    echo "Example: sudo -u www-data ./start.sh prod"
+    exit 1
   fi
 fi
 
-if command -v lsof >/dev/null 2>&1 && lsof -Pi :"$BACKEND_PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
-  echo -e "${YELLOW}Port $BACKEND_PORT is occupied. Stop that process before starting.${NC}"
+if [[ -f "$APP_DIR/.env.oss" ]]; then
+  # shellcheck disable=SC1091
+  source "$APP_DIR/.env.oss"
+elif [[ "$PROFILE" == "prod" ]]; then
+  echo "Missing .env.oss. Configure OSS credentials before production start."
+  exit 1
+else
+  export OSS_ACCESS_KEY_ID="${OSS_ACCESS_KEY_ID:-dev-oss-key}"
+  export OSS_ACCESS_KEY_SECRET="${OSS_ACCESS_KEY_SECRET:-dev-oss-secret}"
+  echo "No .env.oss found; using placeholder OSS credentials for local development."
+fi
+
+if [[ -f "$APP_DIR/.env.database" ]]; then
+  # shellcheck disable=SC1091
+  source "$APP_DIR/.env.database"
+fi
+
+if [[ -f "$APP_DIR/.env.admin" ]]; then
+  # shellcheck disable=SC1091
+  source "$APP_DIR/.env.admin"
+fi
+
+if [[ "$PROFILE" == "prod" ]]; then
+  if [[ -z "${BLOG_ADMIN_USERNAME:-}" || -z "${BLOG_ADMIN_PASSWORD:-}" ]]; then
+    echo "BLOG_ADMIN_USERNAME/BLOG_ADMIN_PASSWORD are not set."
+    echo "If the first administrator already exists, this is expected."
+    echo "For first deployment, set strong values before starting."
+  else
+    echo "Admin bootstrap variables detected. Remove them after the admin account exists."
+  fi
+fi
+
+BACKEND_PORT="${BACKEND_PORT:-8080}"
+if [[ -f "$APP_DIR/.backend-port" ]]; then
+  BACKEND_URL="$(tr -d '[:space:]' < "$APP_DIR/.backend-port")"
+  BACKEND_PORT="${BACKEND_URL##*:}"
+fi
+
+JAR_FILE="$(find "$APP_DIR/backend/target" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | head -n 1 || true)"
+if [[ -z "$JAR_FILE" ]]; then
+  echo "Backend jar not found. Build first:"
+  echo "  cd backend && ./mvnw clean package -DskipTests"
   exit 1
 fi
 
-nohup java -jar "$JAR_FILE" \
+if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$BACKEND_PORT )" | grep -q ":$BACKEND_PORT"; then
+  echo "Port $BACKEND_PORT is already in use."
+  exit 1
+fi
+
+echo "Backend port: $BACKEND_PORT"
+exec java -jar "$JAR_FILE" \
   --server.port="$BACKEND_PORT" \
-  --spring.profiles.active=prod \
-  > backend.log 2>&1 &
-
-BACKEND_PID=$!
-echo "$BACKEND_PID" > backend.pid
-
-if ps -p "$BACKEND_PID" > /dev/null; then
-  echo -e "${GREEN}Backend started with PID: $BACKEND_PID${NC}"
-else
-  echo -e "${RED}Backend failed to start. Check backend.log.${NC}"
-  exit 1
-fi
-
-if [ -d "front/dist" ]; then
-  echo -e "${GREEN}Frontend static files detected in front/dist.${NC}"
-else
-  echo -e "${YELLOW}front/dist not found. Run cd front && npm run build.${NC}"
-fi
-
-echo -e "${CYAN}Backend port: $BACKEND_PORT${NC}"
-echo -e "${CYAN}Log: backend.log${NC}"
+  --spring.profiles.active="$PROFILE"

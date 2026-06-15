@@ -186,22 +186,24 @@ onMounted(fetchSocials)
 }
 
 .social-links-enhanced.home {
-  @apply justify-center flex-wrap;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .social-links-enhanced.sidebar {
-  @apply justify-start flex-wrap;
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .social-links-enhanced.footer {
-  @apply justify-center;
+  justify-content: center;
 }
 
 .social-links-enhanced.compact {
-  @apply gap-2;
+  gap: 0.5rem;
 }
 
 .social-links-enhanced.compact .item {
-  @apply p-1;
+  padding: 0.25rem;
 }
 </style>

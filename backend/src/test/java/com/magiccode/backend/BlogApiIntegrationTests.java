@@ -24,6 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +32,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -161,6 +163,144 @@ class BlogApiIntegrationTests {
     }
 
     @Test
+    void adminCommentListFiltersSearchesAndPaginates() throws Exception {
+        saveComment("Pending Reader", "pending@example.com", "Need review", CommentStatus.PENDING);
+        saveComment("Approved Reader", "approved@example.com", "Visible comment", CommentStatus.APPROVED);
+        saveComment("Rejected Reader", "rejected@example.com", "Spam phrase", CommentStatus.REJECTED);
+
+        mockMvc.perform(get("/api/comments/admin")
+                        .param("status", "PENDING")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("PENDING"));
+
+        mockMvc.perform(get("/api/comments/admin")
+                        .param("status", "APPROVED")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("APPROVED"));
+
+        mockMvc.perform(get("/api/comments/admin")
+                        .param("status", "ALL")
+                        .param("keyword", "spam")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].email").value("rejected@example.com"));
+
+        mockMvc.perform(get("/api/comments/admin")
+                        .param("status", "ALL")
+                        .param("page", "0")
+                        .param("size", "2")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.items.length()").value(2));
+    }
+
+    @Test
+    void commentStatsRequireAuthenticationAndReturnCounts() throws Exception {
+        saveComment("Pending Reader", "pending@example.com", "Need review", CommentStatus.PENDING);
+        saveComment("Approved Reader", "approved@example.com", "Visible comment", CommentStatus.APPROVED);
+        saveComment("Rejected Reader", "rejected@example.com", "Spam phrase", CommentStatus.REJECTED);
+
+        mockMvc.perform(get("/api/comments/admin/stats"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/comments/admin/stats")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pending").value(1))
+                .andExpect(jsonPath("$.approved").value(1))
+                .andExpect(jsonPath("$.rejected").value(1))
+                .andExpect(jsonPath("$.total").value(3));
+    }
+
+    @Test
+    void bulkCommentActionsRequireAuthenticationAndValidateInput() throws Exception {
+        Comment first = saveComment("First", "first@example.com", "First pending", CommentStatus.PENDING);
+        Comment second = saveComment("Second", "second@example.com", "Second pending", CommentStatus.PENDING);
+
+        mockMvc.perform(post("/api/comments/admin/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("commentIds", List.of(first.getId()), "action", "APPROVE"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/comments/admin/bulk")
+                        .header("Authorization", "Bearer " + adminToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("commentIds", List.of(), "action", "APPROVE"))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/comments/admin/bulk")
+                        .header("Authorization", "Bearer " + adminToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("commentIds", List.of(first.getId(), second.getId()), "action", "APPROVE"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.affected").value(2));
+
+        assertThat(commentRepository.findAll().stream().map(Comment::getStatus)).containsOnly(CommentStatus.APPROVED);
+
+        mockMvc.perform(post("/api/comments/admin/bulk")
+                        .header("Authorization", "Bearer " + adminToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("commentIds", List.of(first.getId(), second.getId()), "action", "REJECT"))))
+                .andExpect(status().isOk());
+        assertThat(commentRepository.findAll().stream().map(Comment::getStatus)).containsOnly(CommentStatus.REJECTED);
+
+        mockMvc.perform(post("/api/comments/admin/bulk")
+                        .header("Authorization", "Bearer " + adminToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("commentIds", List.of(first.getId(), second.getId()), "action", "DELETE"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.affected").value(2));
+        assertThat(commentRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void moderationRulesRejectObviousSpamAndKeepPublicResponseClean() throws Exception {
+        mockMvc.perform(post("/api/comments/post/{postId}", post.getId())
+                        .with(request -> {
+                            request.setRemoteAddr("10.0.0.1");
+                            return request;
+                        })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(new CreateCommentRequest("Reader", "reader@example.com", "https://one.test https://two.test https://three.test", null))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.moderationReason").doesNotExist());
+
+        mockMvc.perform(post("/api/comments/post/{postId}", post.getId())
+                        .with(request -> {
+                            request.setRemoteAddr("10.0.0.2");
+                            return request;
+                        })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(new CreateCommentRequest("Reader", "reader@example.com", "This has blockedword inside", null))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        mockMvc.perform(post("/api/comments/post/{postId}", post.getId())
+                        .with(request -> {
+                            request.setRemoteAddr("10.0.0.3");
+                            return request;
+                        })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(new CreateCommentRequest("Reader", "reader@example.com", "A normal thoughtful comment", null))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        mockMvc.perform(get("/api/comments/admin")
+                        .param("status", "REJECTED")
+                        .header("Authorization", "Bearer " + adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].moderationReason").exists());
+    }
+
+    @Test
     void duplicateLikeDoesNotIncreaseCountAndSwitchingReactionUpdatesCounts() throws Exception {
         mockMvc.perform(post("/api/posts/{postId}/like", post.getId()).param("positive", "true"))
                 .andExpect(status().isOk())
@@ -193,6 +333,44 @@ class BlogApiIntegrationTests {
                 .andExpect(jsonPath("$.message").exists());
     }
 
+    @Test
+    void actuatorHealthAndInfoAreAvailableInTestProfile() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+
+        mockMvc.perform(get("/actuator/info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.app.name").value("sudo-make-me-a-website"));
+    }
+
+    @Test
+    void requestIdHeaderIsReturnedAndReused() throws Exception {
+        mockMvc.perform(get("/api/posts/recent"))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Request-Id"));
+
+        mockMvc.perform(get("/api/posts/recent")
+                        .header("X-Request-Id", "test-request-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-Id", "test-request-id"));
+
+        mockMvc.perform(get("/api/comments/admin/stats"))
+                .andExpect(status().isForbidden())
+                .andExpect(header().exists("X-Request-Id"));
+    }
+
+    @Test
+    void openApiDocsAreAvailableInTestProfile() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openapi").exists())
+                .andExpect(jsonPath("$.info.title").value("sudo-make-me-a-website API"))
+                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/admin/auth/me'].get.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/posts/recent'].get.security").doesNotExist());
+    }
+
     private String adminToken() throws Exception {
         String loginBody = mockMvc.perform(post("/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -205,5 +383,15 @@ class BlogApiIntegrationTests {
 
     private String json(Object value) throws Exception {
         return objectMapper.writeValueAsString(value);
+    }
+
+    private Comment saveComment(String name, String email, String content, CommentStatus status) {
+        return commentRepository.save(Comment.builder()
+                .post(post)
+                .name(name)
+                .email(email)
+                .content(content)
+                .status(status)
+                .build());
     }
 }

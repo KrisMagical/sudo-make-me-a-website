@@ -1,19 +1,33 @@
-<!-- src/views/admin/CommentListView.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { commentsApi } from '@/api/comments'
 import { useAuthStore } from '@/stores/authStore'
 import { notify } from '@/utils/feedback'
-import { getApiErrorMessage } from '@/utils/apiError'
+import { getApiErrorMessageWithRequestId } from '@/utils/apiError'
 import CommentNode from '@/components/public/CommentNode.vue'
-import type { CommentDto, CommentSearchResult } from '@/types/api'
+import type {
+  BulkCommentAction,
+  CommentSearchResult,
+  CommentStatsDto,
+  CommentStatusFilter
+} from '@/types/api'
 
 const auth = useAuthStore()
-const searchKeyword = ref('')
-const searchResults = ref<CommentSearchResult[]>([])
-const searching = ref(false)
+const statusOptions: CommentStatusFilter[] = ['PENDING', 'APPROVED', 'REJECTED', 'ALL']
 
-// 回复弹窗状态
+const statusFilter = ref<CommentStatusFilter>('PENDING')
+const keyword = ref('')
+const comments = ref<CommentSearchResult[]>([])
+const stats = ref<CommentStatsDto>({ pending: 0, approved: 0, rejected: 0, total: 0 })
+const loading = ref(false)
+const page = ref(0)
+const size = 20
+const total = ref(0)
+const totalPages = ref(0)
+const selectedIds = ref<Set<number>>(new Set())
+const pendingDeleteId = ref<number | null>(null)
+const confirmBulkDelete = ref(false)
+
 const replyModal = ref({
   visible: false,
   postId: 0,
@@ -23,63 +37,144 @@ const replyModal = ref({
   email: ''
 })
 
-// 执行搜索
+const hasSelection = computed(() => selectedIds.value.size > 0)
+const hasMore = computed(() => page.value + 1 < totalPages.value)
+
+const selectedCount = computed(() => selectedIds.value.size)
+
+const loadStats = async () => {
+  stats.value = await commentsApi.stats() as CommentStatsDto
+}
+
+const loadComments = async (reset = true) => {
+  loading.value = true
+  try {
+    const nextPage = reset ? 0 : page.value + 1
+    const result = await commentsApi.list({
+      status: statusFilter.value,
+      keyword: keyword.value.trim() || undefined,
+      page: nextPage,
+      size,
+      sort: 'createdAt desc'
+    })
+
+    comments.value = reset ? result.items : [...comments.value, ...result.items]
+    page.value = result.page
+    total.value = result.total
+    totalPages.value = result.totalPages
+    if (reset) selectedIds.value = new Set()
+  } catch (error) {
+    notify(getApiErrorMessageWithRequestId(error, 'Failed to load comments.'), 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
+const refreshAll = async () => {
+  await Promise.all([loadComments(true), loadStats()])
+}
+
+const setStatus = async (status: CommentStatusFilter) => {
+  statusFilter.value = status
+  await loadComments(true)
+}
+
 const performSearch = async () => {
-  if (!searchKeyword.value.trim()) {
-    notify('Please enter a search keyword', 'info')
+  await loadComments(true)
+}
+
+const clearSearch = async () => {
+  keyword.value = ''
+  await loadComments(true)
+}
+
+const toggleSelected = (id: number) => {
+  const next = new Set(selectedIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  selectedIds.value = next
+}
+
+const toggleAllVisible = () => {
+  if (comments.value.length === 0) return
+  const allVisibleSelected = comments.value.every(comment => selectedIds.value.has(comment.id))
+  selectedIds.value = allVisibleSelected ? new Set() : new Set(comments.value.map(comment => comment.id))
+}
+
+const removeFromList = (ids: number[]) => {
+  comments.value = comments.value.filter(comment => !ids.includes(comment.id))
+  const next = new Set(selectedIds.value)
+  ids.forEach(id => next.delete(id))
+  selectedIds.value = next
+}
+
+const updateLocalStatus = (ids: number[], status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
+  comments.value.forEach(comment => {
+    if (ids.includes(comment.id)) {
+      comment.status = status
+      if (status === 'APPROVED') comment.moderationReason = null
+    }
+  })
+}
+
+const handleDelete = async (comment: CommentSearchResult) => {
+  if (pendingDeleteId.value !== comment.id) {
+    pendingDeleteId.value = comment.id
     return
   }
 
-  searching.value = true
-  try {
-    searchResults.value = (await commentsApi.search(searchKeyword.value.trim())) as unknown as CommentSearchResult[]
-    if (searchResults.value.length === 0) {
-      notify('No comments found matching your search', 'info')
-    }
-  } catch (error) {
-    console.error('Search failed:', error)
-    notify('Search failed. Please try again.', 'error')
-  } finally {
-    searching.value = false
-  }
-}
-
-// 清空搜索
-const clearSearch = () => {
-  searchKeyword.value = ''
-  searchResults.value = []
-}
-
-// 删除评论
-const handleDelete = async (comment: CommentDto | CommentSearchResult) => {
-  if (!confirm('Delete this comment?')) return
-
   try {
     await commentsApi.delete(comment.id)
-    notify('Comment deleted')
-
-    // 从搜索结果中移除
-    const index = searchResults.value.findIndex(c => c.id === comment.id)
-    if (index !== -1) {
-      searchResults.value.splice(index, 1)
-    }
-  } catch (error: any) {
-    notify(getApiErrorMessage(error, 'Failed to delete comment.'), 'error')
+    removeFromList([comment.id])
+    await loadStats()
+    notify('Comment deleted', 'success')
+  } catch (error) {
+    notify(getApiErrorMessageWithRequestId(error, 'Failed to delete comment.'), 'error')
+  } finally {
+    pendingDeleteId.value = null
   }
 }
 
-const updateStatus = async (comment: CommentDto | CommentSearchResult, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
+const updateStatus = async (comment: CommentSearchResult, status: 'PENDING' | 'APPROVED' | 'REJECTED') => {
   try {
-    const updated = await commentsApi.updateStatus(comment.id, status) as unknown as CommentDto
-    const item = searchResults.value.find(c => c.id === comment.id)
-    if (item) item.status = updated.status
+    const updated = await commentsApi.updateStatus(comment.id, status)
+    comment.status = updated.status
+    if (updated.status === 'APPROVED') comment.moderationReason = null
+    await loadStats()
     notify(`Comment ${status.toLowerCase()}`, 'success')
   } catch (error) {
-    notify(getApiErrorMessage(error, 'Failed to update comment status.'), 'error')
+    notify(getApiErrorMessageWithRequestId(error, 'Failed to update comment status.'), 'error')
   }
 }
 
-// 打开回复弹窗
+const bulkAction = async (action: BulkCommentAction) => {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) {
+    notify('No comments selected', 'info')
+    return
+  }
+
+  if (action === 'DELETE' && !confirmBulkDelete.value) {
+    confirmBulkDelete.value = true
+    return
+  }
+
+  try {
+    await commentsApi.bulk(ids, action)
+    if (action === 'DELETE') {
+      removeFromList(ids)
+      notify('Comments deleted', 'success')
+    } else {
+      updateLocalStatus(ids, action === 'APPROVE' ? 'APPROVED' : 'REJECTED')
+      selectedIds.value = new Set()
+      notify(`Comments ${action.toLowerCase()}`, 'success')
+    }
+    confirmBulkDelete.value = false
+    await loadStats()
+  } catch (error) {
+    notify(getApiErrorMessageWithRequestId(error, 'Bulk action failed.'), 'error')
+  }
+}
+
 const openReply = (postId: number, parentId?: number) => {
   replyModal.value = {
     visible: true,
@@ -91,7 +186,6 @@ const openReply = (postId: number, parentId?: number) => {
   }
 }
 
-// 提交回复/新评论（使用管理员专用接口）
 const submitReply = async () => {
   if (!replyModal.value.content.trim()) {
     notify('Content cannot be empty', 'error')
@@ -115,19 +209,14 @@ const submitReply = async () => {
       parentId: replyModal.value.parentId
     })
 
-    // 刷新搜索结果
-    if (searchKeyword.value.trim()) {
-      await performSearch()
-    }
-
     replyModal.value.visible = false
-    notify('Reply posted successfully', 'success')
+    await refreshAll()
+    notify('Reply posted', 'success')
   } catch (error) {
-    notify(getApiErrorMessage(error, 'Failed to post reply'), 'error')
+    notify(getApiErrorMessageWithRequestId(error, 'Failed to post reply'), 'error')
   }
 }
 
-// 为搜索结果的评论构建父评论信息
 const getParentInfo = (comment: CommentSearchResult) => {
   if (!comment.parentId) return undefined
 
@@ -137,144 +226,169 @@ const getParentInfo = (comment: CommentSearchResult) => {
     exists: comment.parentExists
   }
 }
+
+onMounted(refreshAll)
 </script>
 
 <template>
   <div class="space-y-6">
     <div class="flex justify-between items-end border-b-2 border-zinc-800 pb-2">
-      <h2 class="text-2xl font-bold tracking-tighter">COMMENTS MANAGEMENT</h2>
+      <h2 class="text-2xl font-bold tracking-tighter">COMMENTS</h2>
+      <div class="text-xs font-mono text-zinc-500">
+        pending: {{ stats.pending }} / approved: {{ stats.approved }} / rejected: {{ stats.rejected }} / total: {{ stats.total }}
+      </div>
     </div>
 
-    <!-- 搜索框 -->
-    <div class="flex gap-4 items-center">
-      <div class="flex-1">
-        <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-2">Search Comments</label>
-        <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2 items-end">
+      <div class="flex gap-2">
+        <button
+          v-for="status in statusOptions"
+          :key="status"
+          @click="setStatus(status)"
+          class="px-3 py-1 border text-xs font-mono uppercase"
+          :class="statusFilter === status ? 'border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-black' : 'border-zinc-300 dark:border-zinc-700'"
+        >
+          {{ status.toLowerCase() }}
+          <span v-if="status === 'PENDING'">:{{ stats.pending }}</span>
+        </button>
+      </div>
+
+      <div class="flex-1 min-w-64 flex gap-2">
+        <input
+          v-model="keyword"
+          type="text"
+          placeholder="search name / email / content / post"
+          class="flex-1 bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500 text-sm"
+          @keyup.enter="performSearch"
+        />
+        <button
+          @click="performSearch"
+          :disabled="loading"
+          class="px-3 py-2 border border-zinc-900 text-xs font-bold uppercase disabled:opacity-50"
+        >
+          {{ loading ? '...' : 'Search' }}
+        </button>
+        <button
+          v-if="keyword"
+          @click="clearSearch"
+          class="px-3 py-2 border border-zinc-300 dark:border-zinc-700 text-xs font-bold uppercase"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 items-center text-xs font-mono">
+      <button @click="toggleAllVisible" class="px-2 py-1 border border-zinc-300 dark:border-zinc-700">
+        toggle visible
+      </button>
+      <button @click="bulkAction('APPROVE')" class="px-2 py-1 border border-zinc-300 dark:border-zinc-700">
+        approve selected
+      </button>
+      <button @click="bulkAction('REJECT')" class="px-2 py-1 border border-zinc-300 dark:border-zinc-700">
+        reject selected
+      </button>
+      <button @click="bulkAction('DELETE')" class="px-2 py-1 border border-red-500 text-red-600">
+        {{ confirmBulkDelete ? 'confirm delete selected' : 'delete selected' }}
+      </button>
+      <span class="text-zinc-500">selected: {{ selectedCount }}</span>
+    </div>
+
+    <div class="text-xs font-mono text-zinc-500">
+      showing {{ comments.length }} / {{ total }}
+    </div>
+
+    <div v-if="loading && comments.length === 0" class="text-center py-12 text-zinc-500">
+      Loading comments...
+    </div>
+
+    <div v-else-if="comments.length > 0" class="space-y-4">
+      <div v-for="comment in comments" :key="comment.id" class="border border-zinc-200 dark:border-zinc-800 p-4">
+        <div class="flex gap-3 items-start">
           <input
-              v-model="searchKeyword"
-              type="text"
-              placeholder="Search by content, username, post title or slug..."
-              class="flex-1 bg-transparent border border-zinc-300 dark:border-zinc-700 px-3 py-2 outline-none focus:border-zinc-500"
-              @keyup.enter="performSearch"
+            type="checkbox"
+            class="mt-1"
+            :checked="selectedIds.has(comment.id)"
+            @change="toggleSelected(comment.id)"
           />
-          <button
-              @click="performSearch"
-              :disabled="searching || !searchKeyword.trim()"
-              class="px-4 py-2 bg-zinc-900 dark:bg-zinc-800 text-white hover:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold uppercase tracking-tighter"
-          >
-            {{ searching ? 'Searching...' : 'Search' }}
-          </button>
-          <button
-              v-if="searchResults.length > 0 || searchKeyword"
-              @click="clearSearch"
-              class="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-sm font-bold uppercase tracking-tighter"
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-    </div>
+          <div class="flex-1 min-w-0">
+            <div class="mb-3 pb-2 border-b border-zinc-200 dark:border-zinc-800 flex flex-wrap gap-2 items-center">
+              <router-link :to="`/admin/posts/edit/${comment.postSlug}`" class="text-sm font-mono hover:underline">
+                {{ comment.postTitle }} ({{ comment.postSlug }})
+              </router-link>
+              <span class="border border-zinc-300 dark:border-zinc-700 px-1.5 py-0.5 text-[10px] font-mono">
+                {{ comment.status }}
+              </span>
+            </div>
 
-    <!-- 搜索结果 -->
-    <div v-if="searchResults.length > 0">
-      <div class="mb-4 text-sm text-zinc-500">
-        Found {{ searchResults.length }} comment(s) matching "{{ searchKeyword }}"
-      </div>
+            <div class="mb-2 text-xs text-zinc-500 font-mono">
+              {{ comment.name }} &lt;{{ comment.email }}&gt;
+              <span v-if="comment.moderationReason" class="ml-2 text-red-600">
+                reason: {{ comment.moderationReason }}
+              </span>
+            </div>
 
-      <div class="space-y-6">
-        <div v-for="comment in searchResults" :key="comment.id" class="border border-zinc-200 dark:border-zinc-800 p-4">
-          <!-- 文章信息 -->
-          <div class="mb-3 pb-2 border-b border-zinc-200 dark:border-zinc-800">
-            <div class="text-xs text-zinc-500">Post:</div>
-            <router-link
-                :to="`/admin/posts/edit/${comment.postSlug}`"
-                class="text-sm font-mono text-blue-600 hover:underline"
-            >
-              {{ comment.postTitle }} ({{ comment.postSlug }})
-            </router-link>
-          </div>
-
-          <!-- 邮箱信息 -->
-          <div class="mb-2 text-xs text-zinc-400">
-            Email: {{ comment.email }}
-            <span class="ml-3 border border-zinc-300 dark:border-zinc-700 px-1.5 py-0.5 text-[10px] font-mono">
-              {{ comment.status }}
-            </span>
-          </div>
-
-          <!-- 评论内容 -->
-          <CommentNode
+            <CommentNode
               :comment="comment"
               :parent-info="getParentInfo(comment)"
               @reply="openReply(comment.postId, $event)"
-          >
-            <template #actions="{ comment: cmt }">
-              <button
+            >
+              <template #actions="{ comment: cmt }">
+                <button
                   v-if="cmt.status !== 'APPROVED'"
-                  @click="updateStatus(cmt, 'APPROVED')"
-                  class="text-sm text-green-600 hover:text-green-800 ml-2"
-              >
-                Approve
-              </button>
-              <button
+                  @click="updateStatus(comment, 'APPROVED')"
+                  class="text-sm hover:underline ml-2"
+                >
+                  Approve
+                </button>
+                <button
                   v-if="cmt.status !== 'REJECTED'"
-                  @click="updateStatus(cmt, 'REJECTED')"
-                  class="text-sm text-zinc-500 hover:text-zinc-800 ml-2"
-              >
-                Reject
-              </button>
-              <button
-                  @click="handleDelete(cmt)"
-                  class="text-sm text-red-600 hover:text-red-800 ml-2"
-              >
-                Delete
-              </button>
-            </template>
-          </CommentNode>
+                  @click="updateStatus(comment, 'REJECTED')"
+                  class="text-sm text-zinc-500 hover:underline ml-2"
+                >
+                  Reject
+                </button>
+                <button
+                  @click="handleDelete(comment)"
+                  class="text-sm text-red-600 hover:underline ml-2"
+                >
+                  {{ pendingDeleteId === comment.id ? 'Confirm delete' : 'Delete' }}
+                </button>
+              </template>
+            </CommentNode>
+          </div>
         </div>
+      </div>
+
+      <div class="text-center">
+        <button
+          v-if="hasMore"
+          @click="loadComments(false)"
+          :disabled="loading"
+          class="px-4 py-2 border border-zinc-300 dark:border-zinc-700 text-xs font-bold uppercase disabled:opacity-50"
+        >
+          {{ loading ? 'Loading...' : 'Load more' }}
+        </button>
       </div>
     </div>
 
-    <div v-else-if="searching" class="text-center py-12 text-zinc-500">
-      Searching...
-    </div>
-
-    <div v-else-if="searchKeyword && !searching && searchResults.length === 0" class="text-center py-12 text-zinc-500">
-      No comments found matching "{{ searchKeyword }}"
-    </div>
-
     <div v-else class="text-center py-12 text-zinc-500">
-      Enter a keyword to search for comments by content, username, or post title/slug
+      No comments.
     </div>
 
-    <!-- 回复/添加评论弹窗 -->
     <div v-if="replyModal.visible" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white dark:bg-zinc-900 p-6 w-96 rounded shadow-lg">
+      <div class="bg-white dark:bg-zinc-900 p-6 w-96 border border-zinc-900 dark:border-zinc-100">
         <h3 class="text-lg font-bold mb-4">
-          {{ replyModal.parentId ? 'Reply to Comment' : 'Add Comment to Post' }}
+          {{ replyModal.parentId ? 'Reply' : 'Add comment' }}
         </h3>
-        <input
-            v-model="replyModal.name"
-            placeholder="Name"
-            class="w-full border p-2 mb-2 dark:bg-zinc-800"
-        />
-        <input
-            v-model="replyModal.email"
-            type="email"
-            placeholder="Email (required)"
-            class="w-full border p-2 mb-2 dark:bg-zinc-800"
-        />
-        <textarea
-            v-model="replyModal.content"
-            placeholder="Content"
-            rows="4"
-            class="w-full border p-2 mb-2 dark:bg-zinc-800"
-        ></textarea>
+        <input v-model="replyModal.name" placeholder="Name" class="w-full border p-2 mb-2 bg-transparent" />
+        <input v-model="replyModal.email" type="email" placeholder="Email" class="w-full border p-2 mb-2 bg-transparent" />
+        <textarea v-model="replyModal.content" placeholder="Content" rows="4" class="w-full border p-2 mb-2 bg-transparent"></textarea>
         <div class="flex justify-end gap-2">
-          <button @click="replyModal.visible = false" class="px-4 py-2 bg-gray-300 dark:bg-zinc-700 rounded">
+          <button @click="replyModal.visible = false" class="px-4 py-2 border border-zinc-300 dark:border-zinc-700">
             Cancel
           </button>
-          <button @click="submitReply" class="px-4 py-2 bg-blue-600 text-white rounded">
+          <button @click="submitReply" class="px-4 py-2 border border-zinc-900 dark:border-zinc-100">
             Submit
           </button>
         </div>

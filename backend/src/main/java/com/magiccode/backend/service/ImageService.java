@@ -8,12 +8,15 @@ import com.magiccode.backend.mapping.ImageMapper;
 import com.magiccode.backend.model.*;
 import com.magiccode.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ImageService {
@@ -76,6 +80,8 @@ public class ImageService {
             PutObjectRequest putRequest = new PutObjectRequest(bucketName, objectKey, inputStream, metadata);
             ossClient.putObject(putRequest);
         } catch (IOException e) {
+            log.warn("image upload failed ownerType={} ownerId={} contentType={} size={}",
+                    ownerType, ownerId, contentType, file.getSize());
             throw new RuntimeException("Upload to OSS failed", e);
         }
 
@@ -103,12 +109,15 @@ public class ImageService {
                 .objectKey(objectKey)
                 .url(url)
                 .build();
-        return embeddedImageRepository.save(image);
+        EmbeddedImage saved = embeddedImageRepository.save(image);
+        log.info("image uploaded imageId={} ownerType={} ownerId={} contentType={} size={}",
+                saved.getId(), ownerType, ownerId, contentType, size);
+        return saved;
     }
 
     @Transactional
     public ImageDto uploadToPost(Long postId, MultipartFile file) {
-        Post post = postRepository.findById(postId).orElseThrow(() -> new RuntimeException("Post Not Found"));
+        Post post = postRepository.findById(postId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post Not Found"));
 
         UploadResult upload = uploadToOSS(file, EmbeddedImage.OwnerType.POST, post.getId());
 
@@ -234,7 +243,7 @@ public class ImageService {
     @Transactional(readOnly = true)
     public EmbeddedImage get(EmbeddedImage.OwnerType ownerType, Long ownerId, Long imageId) {
         return embeddedImageRepository.findByIdAndOwnerTypeAndOwnerId(imageId, ownerType, ownerId)
-                .orElseThrow(() -> new RuntimeException("Image Not Found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Image Not Found"));
     }
 
     @Transactional
@@ -242,6 +251,7 @@ public class ImageService {
         EmbeddedImage img = get(ownerType, ownerId, imageId);
         deleteFromOSS(img.getObjectKey());
         embeddedImageRepository.delete(img);
+        log.info("image deleted imageId={} ownerType={} ownerId={}", imageId, ownerType, ownerId);
     }
 
     @Transactional
@@ -251,6 +261,7 @@ public class ImageService {
             deleteFromOSS(img.getObjectKey());
         }
         embeddedImageRepository.deleteAllByOwnerTypeAndOwnerId(ownerType, ownerId);
+        log.info("images deleted ownerType={} ownerId={} count={}", ownerType, ownerId, images.size());
     }
 
     // ---------- Utils ----------
@@ -345,5 +356,6 @@ public class ImageService {
             deleteFromOSS(img.getObjectKey());
         }
         embeddedImageRepository.deleteByOwnerTypeAndOwnerIdIn(ownerType, ownerIds);
+        log.info("images deleted ownerType={} ownerIdsCount={} count={}", ownerType, ownerIds.size(), images.size());
     }
 }

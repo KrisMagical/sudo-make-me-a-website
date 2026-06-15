@@ -5,10 +5,13 @@ import com.magiccode.backend.dto.LoginResponse;
 import com.magiccode.backend.model.User;
 import com.magiccode.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -18,17 +21,23 @@ public class UserService {
     private final JWTService jwtService;
 
     public LoginResponse login(LoginRequest req) {
-        manager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword())
-        );
+        try {
+            manager.authenticate(
+                    new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword())
+            );
+        } catch (AuthenticationException ex) {
+            log.warn("admin login failed username={}", req.getUsername());
+            throw ex;
+        }
 
         User dbUser = userRepository.findByUsername(req.getUsername());
 
         if (dbUser == null) {
-            throw new IllegalStateException("认证通过但用户不存在，检查数据一致性");
+            throw new IllegalStateException("Authenticated user not found");
         }
 
         String token = jwtService.generateToken(dbUser.getUsername(), dbUser.getRole());
+        log.info("admin login succeeded username={} role={}", dbUser.getUsername(), dbUser.getRole());
 
         return LoginResponse.builder()
                 .token(token)
