@@ -81,6 +81,19 @@ Run the helper script:
 ./configure.sh
 ```
 
+The script asks for basic site identity:
+
+- Website name
+- Website domain
+- Author name
+- Footer / copyright text
+
+The footer text is written to `front/.env.production` for the public footer. If
+the MySQL schema already exists, the script can also write the same site
+identity into the `site_configs` table. If the schema has not been initialized
+yet, run `bootstrap-schema.sql` first or update the site config later from the
+admin panel.
+
 Recommended answers for production:
 
 ```text

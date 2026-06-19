@@ -109,6 +109,65 @@ shell_quote() {
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
+sql_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
+}
+
+write_frontend_env() {
+  local file="$APP_DIR/front/.env.production"
+  local api_base="$1"
+  : > "$file"
+  if [[ -n "$api_base" ]]; then
+    printf 'VITE_API_BASE_URL=%s\n' "$api_base" >> "$file"
+  fi
+  printf 'VITE_FOOTER_TEXT=%s\n' "$SITE_FOOTER_TEXT" >> "$file"
+  info "Wrote front/.env.production."
+}
+
+update_site_config_database() {
+  if ! command -v mysql >/dev/null 2>&1; then
+    warn "mysql client not found; skipped database site config update."
+    warn "Install mysql client or update site config from the admin panel later."
+    return 0
+  fi
+
+  if ! ask_yes_no "Write site name/footer into database site config now" "Y"; then
+    warn "Skipped database site config update. You can update it from the admin panel later."
+    return 0
+  fi
+
+  local sql
+  sql="
+UPDATE site_configs SET is_active = b'0' WHERE is_active = b'1';
+INSERT INTO site_configs (
+  site_name,
+  author_name,
+  footer_text,
+  meta_description,
+  meta_keywords,
+  copyright_text,
+  is_active
+) VALUES (
+  $(sql_quote "$SITE_NAME"),
+  $(sql_quote "$SITE_AUTHOR"),
+  $(sql_quote "$SITE_FOOTER_TEXT"),
+  '',
+  '',
+  $(sql_quote "$SITE_FOOTER_TEXT"),
+  b'1'
+);
+"
+
+  if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "$sql"; then
+    info "Updated database site config."
+  else
+    warn "Could not update site config in database."
+    warn "Make sure the database schema exists first:"
+    warn "  mysql -u $DB_USER -p $DB_NAME < docs/migrations/bootstrap-schema.sql"
+    warn "You can also update site config from the admin panel after startup."
+  fi
+}
+
 run_frontend_audit() {
   local front_dir="$1"
   if (cd "$front_dir" && npm audit --audit-level=high >/tmp/sudo-blog-npm-audit.log 2>&1); then
@@ -450,7 +509,7 @@ configure_traditional_runtime() {
   local domain
   local alias_value
   local web_server
-  domain="$(ask "Site domain / server name" "$(hostname -f 2>/dev/null || echo localhost)")"
+  domain="$(ask "Site domain / server name" "$SITE_DOMAIN")"
   alias_value="$(ask "Site alias (empty to skip)" "")"
   web_server="$(ask "Web server to configure (apache/nginx/none)" "apache")"
   case "$web_server" in
@@ -523,6 +582,15 @@ case "$PROFILE" in
   *) fail "Unsupported profile: $PROFILE" ;;
 esac
 
+SITE_NAME="$(ask "Website name" "KrisMagic")"
+SITE_DOMAIN="$(ask "Website domain" "magiccodelab.com")"
+SITE_AUTHOR="$(ask "Website author name" "KrisMagic")"
+SITE_FOOTER_TEXT="$(ask "Website footer/copyright text" "© 2026 KrisMagic. All rights reserved.")"
+validate_single_line_value "Website name" "$SITE_NAME"
+validate_single_line_value "Website domain" "$SITE_DOMAIN"
+validate_single_line_value "Website author name" "$SITE_AUTHOR"
+validate_single_line_value "Website footer/copyright text" "$SITE_FOOTER_TEXT"
+
 DB_HOST="$(ask "Database host" "localhost")"
 DB_PORT="$(ask "Database port" "3306")"
 DB_NAME="$(ask "Database name" "blog")"
@@ -547,6 +615,10 @@ write_kv_file "$APP_DIR/.env.database" \
   "export SPRING_DATASOURCE_USERNAME=$(shell_quote "$DB_USER")" \
   "export SPRING_DATASOURCE_PASSWORD=$(shell_quote "$DB_PASSWORD")"
 info "Wrote .env.database with restricted permissions."
+
+if [[ "$PROFILE" == "prod" ]]; then
+  update_site_config_database
+fi
 
 if [[ "$PROFILE" == "prod" ]]; then
   warn "Production profile uses ddl-auto=validate and sql.init.mode=never."
@@ -607,10 +679,7 @@ info "Wrote .backend-port."
 
 FRONT_ENV="$APP_DIR/front/.env.production"
 API_BASE="$(ask "Production API base URL (empty for same-origin proxy)" "")"
-if [[ -n "$API_BASE" ]]; then
-  printf 'VITE_API_BASE_URL=%s\n' "$API_BASE" > "$FRONT_ENV"
-  info "Wrote front/.env.production."
-fi
+write_frontend_env "$API_BASE"
 
 read -r -p "Install frontend dependencies and build now? (y/N): " BUILD_FRONT
 if [[ "$BUILD_FRONT" =~ ^[Yy]$ ]]; then
