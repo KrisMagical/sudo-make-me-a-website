@@ -259,6 +259,7 @@ write_apache_site() {
   local domain="$1"
   local alias_value="$2"
   local backend_port="$3"
+  local enable_https="$4"
   local site_file="/etc/apache2/sites-available/${APACHE_SITE_NAME}.conf"
   local alias_line=""
 
@@ -267,7 +268,75 @@ write_apache_site() {
   fi
 
   info "Writing Apache site: $site_file"
-  cat > "$site_file" <<EOF
+  if [[ "$enable_https" == "true" ]]; then
+    local cert_file
+    local chain_file
+    local key_file
+    cert_file="$(ask "Apache SSL certificate file" "/etc/ssl/certs/${domain}_public.crt")"
+    chain_file="$(ask "Apache SSL certificate chain file" "/etc/ssl/certs/${domain}_chain.crt")"
+    key_file="$(ask "Apache SSL certificate key file" "/etc/ssl/private/${domain}.key")"
+
+    if [[ ! -f "$cert_file" ]]; then
+      warn "Certificate file not found yet: $cert_file"
+    fi
+    if [[ ! -f "$chain_file" ]]; then
+      warn "Certificate chain file not found yet: $chain_file"
+    fi
+    if [[ ! -f "$key_file" ]]; then
+      warn "Certificate key file not found yet: $key_file"
+    fi
+
+    cat > "$site_file" <<EOF
+<VirtualHost *:443>
+    ServerName ${domain}
+${alias_line}
+    ServerAdmin webmaster@${domain}
+
+    DocumentRoot ${APP_DIR}/front/dist
+
+    SSLEngine on
+    SSLCertificateFile ${cert_file}
+    SSLCertificateChainFile ${chain_file}
+    SSLCertificateKeyFile ${key_file}
+
+    <Directory ${APP_DIR}/front/dist>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
+    </Directory>
+
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyTimeout 300
+
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Host expr=%{HTTP_HOST}
+
+    ProxyPass /api/ http://127.0.0.1:${backend_port}/api/
+    ProxyPassReverse /api/ http://127.0.0.1:${backend_port}/api/
+
+    ProxyPass /actuator/health http://127.0.0.1:${backend_port}/actuator/health
+    ProxyPassReverse /actuator/health http://127.0.0.1:${backend_port}/actuator/health
+
+    ErrorLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-ssl-error.log
+    CustomLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-ssl-access.log combined
+</VirtualHost>
+
+<VirtualHost *:80>
+    ServerName ${domain}
+${alias_line}
+    Redirect permanent / https://${domain}/
+</VirtualHost>
+EOF
+  else
+    cat > "$site_file" <<EOF
 <VirtualHost *:80>
     ServerName ${domain}
 ${alias_line}
@@ -302,8 +371,12 @@ ${alias_line}
     CustomLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-access.log combined
 </VirtualHost>
 EOF
+  fi
 
   a2enmod rewrite proxy proxy_http headers >/dev/null
+  if [[ "$enable_https" == "true" ]]; then
+    a2enmod ssl >/dev/null
+  fi
   a2dissite 000-default.conf >/dev/null 2>&1 || true
   a2ensite "${APACHE_SITE_NAME}.conf" >/dev/null
   apache2ctl configtest
@@ -393,7 +466,12 @@ configure_traditional_runtime() {
   case "$web_server" in
     apache)
       if command -v apache2ctl >/dev/null 2>&1; then
-        write_apache_site "$domain" "$alias_value" "$backend_port"
+        local enable_apache_https="false"
+        if ask_yes_no "Enable HTTPS in generated Apache site" "Y"; then
+          enable_apache_https="true"
+          warn "Place certificate files at the prompted paths before Apache reload succeeds."
+        fi
+        write_apache_site "$domain" "$alias_value" "$backend_port" "$enable_apache_https"
       else
         warn "Apache command apache2ctl not found; skipped Apache site setup."
         warn "Install it with: sudo apt install -y apache2"

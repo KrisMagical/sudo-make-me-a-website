@@ -155,6 +155,23 @@ script still does not create the database, initialize schema, or run migrations.
 Run `bootstrap-schema.sql` or the numbered migrations before the final
 production start.
 
+When choosing Apache, the script can generate an HTTPS virtual host. The default
+certificate paths are based on the domain:
+
+```text
+/etc/ssl/certs/<domain>_public.crt
+/etc/ssl/certs/<domain>_chain.crt
+/etc/ssl/private/<domain>.key
+```
+
+For example, `magiccodelab.com` defaults to:
+
+```text
+/etc/ssl/certs/magiccodelab.com_public.crt
+/etc/ssl/certs/magiccodelab.com_chain.crt
+/etc/ssl/private/magiccodelab.com.key
+```
+
 The script checks common prerequisites such as Java, Node.js, npm, systemd,
 Apache, and Nginx when they are needed. If something is missing, it prints a
 focused installation or repair hint and stops before changing unrelated state.
