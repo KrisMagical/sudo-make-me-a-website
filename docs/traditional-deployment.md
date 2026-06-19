@@ -142,6 +142,20 @@ The frontend output is `front/dist`.
 `start.sh prod` starts the built Spring Boot jar, but it should be managed by
 systemd in production.
 
+When `configure.sh` is run with sudo in the `prod` profile, it can automate
+permissions, systemd setup, Apache setup, and service restart in the same
+interactive flow:
+
+```bash
+sudo ./configure.sh
+```
+
+The script still does not create the database, initialize schema, or run
+migrations. Run `bootstrap-schema.sql` or the numbered migrations before the
+final production start.
+
+If you prefer to perform the setup manually, use the steps below.
+
 Create a service user if needed:
 
 ```bash
@@ -361,4 +375,3 @@ the required SQL files before restarting the backend.
 - Do not expose Swagger UI or sensitive Actuator endpoints in production.
 - Do not log passwords, tokens, Authorization headers, or OSS secrets.
 - Back up before every schema migration.
-

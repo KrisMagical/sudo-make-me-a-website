@@ -2,6 +2,9 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_NAME="${SERVICE_NAME:-sudo-blog}"
+SERVICE_USER="${SERVICE_USER:-www-data}"
+APACHE_SITE_NAME="${APACHE_SITE_NAME:-sudo-blog}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -129,6 +132,173 @@ build_frontend() {
   fi
 }
 
+is_root() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]]
+}
+
+check_built_artifacts() {
+  [[ -d "$APP_DIR/front/dist" ]] || fail "Frontend dist not found. Build frontend first."
+  find "$APP_DIR/backend/target" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | grep -q . || \
+    fail "Backend jar not found. Build backend first."
+}
+
+ensure_prod_oss_file() {
+  if [[ -f "$APP_DIR/.env.oss" ]]; then
+    return 0
+  fi
+
+  warn "Missing .env.oss. Production start currently expects OSS environment variables."
+  if ask_yes_no "Create placeholder .env.oss so the site can start without media upload" "N"; then
+    write_kv_file "$APP_DIR/.env.oss" \
+      "export OSS_ENDPOINT='placeholder'" \
+      "export OSS_BUCKET_NAME='placeholder'" \
+      "export OSS_REGION='placeholder'" \
+      "export OSS_CDN_DOMAIN='placeholder'" \
+      "export OSS_ACCESS_KEY_ID='placeholder'" \
+      "export OSS_ACCESS_KEY_SECRET='placeholder'"
+    warn "Created placeholder .env.oss. Replace it before using media upload."
+  else
+    fail "Create .env.oss with real OSS values before production start."
+  fi
+}
+
+fix_deployment_permissions() {
+  info "Fixing deployment permissions for $SERVICE_USER."
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+
+  find "$APP_DIR" -type d -exec chmod 755 {} \;
+  find "$APP_DIR" -type f -exec chmod 644 {} \;
+
+  chmod +x "$APP_DIR/configure.sh" 2>/dev/null || true
+  chmod +x "$APP_DIR/config.sh" 2>/dev/null || true
+  chmod +x "$APP_DIR/start.sh"
+  chmod +x "$APP_DIR/backend/mvnw" 2>/dev/null || true
+
+  chmod 600 "$APP_DIR/.env.database"
+  chmod 600 "$APP_DIR/.env.admin" 2>/dev/null || true
+  chmod 600 "$APP_DIR/.env.oss" 2>/dev/null || true
+}
+
+write_systemd_service() {
+  local unit="/etc/systemd/system/${SERVICE_NAME}.service"
+  info "Writing systemd service: $unit"
+  cat > "$unit" <<EOF
+[Unit]
+Description=sudo-make-me-a-website backend
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+WorkingDirectory=${APP_DIR}
+ExecStart=${APP_DIR}/start.sh prod
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME"
+}
+
+write_apache_site() {
+  local domain="$1"
+  local alias_value="$2"
+  local backend_port="$3"
+  local site_file="/etc/apache2/sites-available/${APACHE_SITE_NAME}.conf"
+  local alias_line=""
+
+  if [[ -n "$alias_value" ]]; then
+    alias_line="    ServerAlias ${alias_value}"
+  fi
+
+  info "Writing Apache site: $site_file"
+  cat > "$site_file" <<EOF
+<VirtualHost *:80>
+    ServerName ${domain}
+${alias_line}
+
+    DocumentRoot ${APP_DIR}/front/dist
+
+    <Directory ${APP_DIR}/front/dist>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\\.html$ - [L]
+        RewriteCond \${REQUEST_FILENAME} !-f
+        RewriteCond \${REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
+    </Directory>
+
+    ProxyPreserveHost On
+
+    ProxyPass /api/ http://127.0.0.1:${backend_port}/api/
+    ProxyPassReverse /api/ http://127.0.0.1:${backend_port}/api/
+
+    ProxyPass /actuator/health http://127.0.0.1:${backend_port}/actuator/health
+    ProxyPassReverse /actuator/health http://127.0.0.1:${backend_port}/actuator/health
+
+    RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
+    RequestHeader set X-Forwarded-Host expr=%{HTTP_HOST}
+
+    ErrorLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-error.log
+    CustomLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-access.log combined
+</VirtualHost>
+EOF
+
+  a2enmod rewrite proxy proxy_http headers >/dev/null
+  a2dissite 000-default.conf >/dev/null 2>&1 || true
+  a2ensite "${APACHE_SITE_NAME}.conf" >/dev/null
+  apache2ctl configtest
+}
+
+configure_traditional_runtime() {
+  local backend_port="$1"
+
+  if ! is_root; then
+    warn "Skipping systemd/Apache setup because this script is not running as root."
+    warn "Run again with sudo if you want configure.sh to finish server setup automatically."
+    return 0
+  fi
+
+  if ! ask_yes_no "Configure permissions, systemd backend service, and Apache site now" "Y"; then
+    warn "Skipped server setup. You can still start manually with: sudo -u $SERVICE_USER ./start.sh prod"
+    return 0
+  fi
+
+  local domain
+  local alias_value
+  domain="$(ask "Apache ServerName / domain" "$(hostname -f 2>/dev/null || echo localhost)")"
+  alias_value="$(ask "Apache ServerAlias (empty to skip)" "")"
+
+  check_built_artifacts
+  ensure_prod_oss_file
+  fix_deployment_permissions
+  write_systemd_service
+
+  if command -v apache2ctl >/dev/null 2>&1; then
+    write_apache_site "$domain" "$alias_value" "$backend_port"
+  else
+    warn "Apache command apache2ctl not found; skipped Apache site setup."
+  fi
+
+  if ask_yes_no "Start/restart backend and reload Apache now" "Y"; then
+    systemctl restart "$SERVICE_NAME"
+    if command -v apache2ctl >/dev/null 2>&1; then
+      systemctl reload apache2
+    fi
+    sleep 5
+    if command -v curl >/dev/null 2>&1; then
+      curl -i "http://127.0.0.1:${backend_port}/actuator/health" || true
+    fi
+  fi
+}
+
 info "sudo-make-me-a-website configuration helper"
 warn "This script does not create weak default administrator accounts."
 warn "Production database migrations remain manual; see docs/database-migration.md."
@@ -229,7 +399,12 @@ if [[ "$BUILD_BACKEND" =~ ^[Yy]$ ]]; then
   (cd "$APP_DIR/backend" && ./mvnw clean package -DskipTests)
 fi
 
+if [[ "$PROFILE" == "prod" ]]; then
+  configure_traditional_runtime "$BACKEND_PORT"
+fi
+
 info "Configuration complete."
 echo "Start locally with: ./start.sh dev"
-echo "Start production with: source .env.database && ./start.sh prod"
+echo "Start production backend with: ./start.sh prod"
+echo "Or use systemd with: sudo systemctl restart $SERVICE_NAME"
 echo "For production, run database migrations manually before starting."

@@ -90,6 +90,19 @@ new backend version. Containers do not run migrations automatically.
 Use [docs/production-runbook.md](docs/production-runbook.md) as the production
 deployment entry point.
 
+### Traditional Source Deployment
+
+If the server already has MySQL, Java, and Apache/Nginx, build from source and
+let systemd run the backend. The configuration script can also set permissions,
+write the systemd service, and create an Apache site when run with sudo:
+
+```bash
+sudo ./configure.sh
+```
+
+See [docs/traditional-deployment.md](docs/traditional-deployment.md) for the
+full flow.
+
 ## API Documentation
 
 In the `dev` profile:
