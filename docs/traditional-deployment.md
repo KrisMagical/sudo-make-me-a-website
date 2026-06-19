@@ -155,6 +155,10 @@ script still does not create the database, initialize schema, or run migrations.
 Run `bootstrap-schema.sql` or the numbered migrations before the final
 production start.
 
+The script checks common prerequisites such as Java, Node.js, npm, systemd,
+Apache, and Nginx when they are needed. If something is missing, it prints a
+focused installation or repair hint and stops before changing unrelated state.
+
 If you prefer to perform the setup manually, use the steps below.
 
 Create a service user if needed:

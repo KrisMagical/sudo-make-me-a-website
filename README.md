@@ -82,6 +82,13 @@ docker compose --env-file .env config
 docker compose up -d --build
 ```
 
+Or use the interactive helper:
+
+```bash
+chmod +x deploy-docker.sh
+./deploy-docker.sh --frontend-port 127.0.0.1:8088
+```
+
 Production database schema changes are manual. For a new production database,
 review and execute `docs/migrations/bootstrap-schema.sql` first. For an existing
 database, run the numbered migrations in `docs/migrations` before starting the

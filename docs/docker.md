@@ -31,6 +31,28 @@ docker compose up -d
 docker compose ps
 ```
 
+You can also use the helper script:
+
+```bash
+chmod +x deploy-docker.sh
+./deploy-docker.sh --frontend-port 127.0.0.1:8088
+```
+
+Use `127.0.0.1:8088` when a host-level Nginx or Apache process terminates HTTPS
+and proxies traffic to the frontend container. Use `80` only when the frontend
+container should bind directly to the public HTTP port.
+
+For a fresh database, add `--init-db` and confirm the prompt:
+
+```bash
+./deploy-docker.sh --frontend-port 127.0.0.1:8088 --init-db
+```
+
+The helper still does not run existing-database migrations automatically.
+It checks Docker, Compose, `.env`, MySQL health, and common port settings. If a
+prerequisite is missing, it prints the next command to run instead of failing
+silently.
+
 ## Database Initialization
 
 For a fresh production database, review and run

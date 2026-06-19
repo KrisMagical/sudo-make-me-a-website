@@ -38,7 +38,36 @@ ask_secret() {
 }
 
 require_command() {
-  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+  if command -v "$1" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  warn "Missing required command: $1"
+  case "$1" in
+    node|npm)
+      warn "Install Node.js first. Vite 8 requires Node.js ^20.19.0 or >=22.12.0."
+      warn "Ubuntu example: install Node.js 22 from NodeSource or your trusted package source, then rerun this script."
+      warn "Check with: node -v && npm -v"
+      ;;
+    java)
+      warn "Install Java 21 before building or running the backend."
+      warn "Ubuntu example: sudo apt install -y openjdk-21-jdk"
+      warn "Check with: java -version"
+      ;;
+    apache2ctl)
+      warn "Apache is not installed or not in PATH."
+      warn "Ubuntu example: sudo apt install -y apache2"
+      ;;
+    nginx)
+      warn "Nginx is not installed or not in PATH."
+      warn "Ubuntu example: sudo apt install -y nginx"
+      ;;
+    systemctl)
+      warn "systemd is required for automatic backend service setup."
+      warn "If this server does not use systemd, choose to skip server setup and run start.sh manually."
+      ;;
+  esac
+  fail "Install the missing prerequisite and rerun configure.sh."
 }
 
 ask_yes_no() {
@@ -133,6 +162,15 @@ build_frontend() {
   fi
 }
 
+check_backend_build_prerequisites() {
+  require_command java
+  if [[ ! -x "$APP_DIR/backend/mvnw" ]]; then
+    warn "Maven Wrapper is not executable. Fixing permission."
+    chmod +x "$APP_DIR/backend/mvnw" 2>/dev/null || \
+      fail "Could not chmod backend/mvnw. Run: chmod +x backend/mvnw"
+  fi
+}
+
 is_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]]
 }
@@ -181,6 +219,7 @@ fix_deployment_permissions() {
 }
 
 write_systemd_service() {
+  require_command systemctl
   local unit="/etc/systemd/system/${SERVICE_NAME}.service"
   info "Writing systemd service: $unit"
   cat > "$unit" <<EOF
@@ -345,6 +384,8 @@ configure_traditional_runtime() {
         write_apache_site "$domain" "$alias_value" "$backend_port"
       else
         warn "Apache command apache2ctl not found; skipped Apache site setup."
+        warn "Install it with: sudo apt install -y apache2"
+        warn "Then rerun configure.sh and choose apache, or choose nginx/none."
       fi
       ;;
     nginx)
@@ -352,6 +393,8 @@ configure_traditional_runtime() {
         write_nginx_site "$domain" "$alias_value" "$backend_port"
       else
         warn "Nginx command not found; skipped Nginx site setup."
+        warn "Install it with: sudo apt install -y nginx"
+        warn "Then rerun configure.sh and choose nginx, or choose apache/none."
       fi
       ;;
     none)
@@ -477,6 +520,7 @@ fi
 
 read -r -p "Build backend jar now? (y/N): " BUILD_BACKEND
 if [[ "$BUILD_BACKEND" =~ ^[Yy]$ ]]; then
+  check_backend_build_prerequisites
   (cd "$APP_DIR/backend" && ./mvnw clean package -DskipTests)
 fi
 
