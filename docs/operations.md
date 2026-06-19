@@ -2,7 +2,8 @@
 
 Use `docs/production-runbook.md` for the full production deployment, upgrade,
 rollback, and incident response flow. Use `docs/backup-restore.md` for database
-backup and restore commands.
+backup and restore commands. Use `docs/traditional-deployment.md` when running
+the backend as a systemd service and serving the frontend with Nginx or Apache.
 
 ## Health Checks
 

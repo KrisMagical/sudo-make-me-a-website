@@ -144,6 +144,8 @@ Backend test scope is summarized in [docs/testing.md](docs/testing.md).
 - [docs/features.md](docs/features.md) - feature inventory.
 - [docs/api.md](docs/api.md) - API contract overview.
 - [docs/docker.md](docs/docker.md) - Docker usage.
+- [docs/traditional-deployment.md](docs/traditional-deployment.md) - source
+  deployment with systemd plus Nginx or Apache.
 - [docs/production-runbook.md](docs/production-runbook.md) - production
   deployment, upgrade, rollback, and incident flow.
 - [docs/database-migration.md](docs/database-migration.md) - schema migration
