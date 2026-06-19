@@ -37,6 +37,19 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+ask_yes_no() {
+  local prompt="$1"
+  local default="${2:-N}"
+  local value
+  local suffix="y/N"
+  if [[ "$default" =~ ^[Yy]$ ]]; then
+    suffix="Y/n"
+  fi
+  read -r -p "$prompt ($suffix): " value
+  value="${value:-$default}"
+  [[ "$value" =~ ^[Yy]$ ]]
+}
+
 write_kv_file() {
   local file="$1"
   shift
@@ -49,6 +62,71 @@ write_kv_file() {
 
 shell_quote() {
   printf '%q' "$1"
+}
+
+run_frontend_audit() {
+  local front_dir="$1"
+  if (cd "$front_dir" && npm audit --audit-level=high >/tmp/sudo-blog-npm-audit.log 2>&1); then
+    info "Frontend npm audit passed for high severity issues."
+    return 0
+  fi
+
+  warn "Frontend npm audit reported high severity issues."
+  warn "Review with: cd front && npm audit"
+  if ask_yes_no "Run safe npm audit fix now? This will not use --force" "N"; then
+    (cd "$front_dir" && npm audit fix)
+    (cd "$front_dir" && npm audit --audit-level=high) || \
+      warn "npm audit still reports high severity issues. Review manually before release."
+  else
+    warn "Skipped npm audit fix. Review audit output before production release."
+  fi
+}
+
+fix_frontend_executables() {
+  local front_dir="$1"
+  local vite_bin="$front_dir/node_modules/vite/bin/vite.js"
+  local vite_link="$front_dir/node_modules/.bin/vite"
+
+  if [[ -f "$vite_bin" && ! -x "$vite_bin" ]]; then
+    warn "Fixing Vite executable permission."
+    chmod +x "$vite_bin" || warn "Could not chmod $vite_bin"
+  fi
+
+  if [[ -e "$vite_link" && ! -x "$vite_link" ]]; then
+    chmod +x "$vite_link" 2>/dev/null || true
+  fi
+}
+
+build_frontend() {
+  local front_dir="$APP_DIR/front"
+
+  require_command npm
+  require_command node
+
+  if [[ -d "$front_dir/node_modules" ]]; then
+    if ask_yes_no "Clean existing frontend node_modules and dist before install" "Y"; then
+      rm -rf "$front_dir/node_modules" "$front_dir/dist"
+      info "Cleaned frontend node_modules and dist."
+    fi
+  fi
+
+  if [[ -f "$front_dir/package-lock.json" ]]; then
+    info "Installing frontend dependencies with npm ci."
+    (cd "$front_dir" && npm ci)
+  else
+    warn "package-lock.json not found; falling back to npm install."
+    (cd "$front_dir" && npm install)
+  fi
+
+  run_frontend_audit "$front_dir"
+  fix_frontend_executables "$front_dir"
+
+  info "Building frontend."
+  if ! (cd "$front_dir" && npm run build); then
+    warn "npm run build failed. Trying direct Vite entrypoint fallback."
+    fix_frontend_executables "$front_dir"
+    (cd "$front_dir" && node ./node_modules/vite/bin/vite.js build)
+  fi
 }
 
 info "sudo-make-me-a-website configuration helper"
@@ -143,8 +221,7 @@ fi
 
 read -r -p "Install frontend dependencies and build now? (y/N): " BUILD_FRONT
 if [[ "$BUILD_FRONT" =~ ^[Yy]$ ]]; then
-  require_command npm
-  (cd "$APP_DIR/front" && npm install && npm run build)
+  build_frontend
 fi
 
 read -r -p "Build backend jar now? (y/N): " BUILD_BACKEND
