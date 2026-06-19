@@ -94,7 +94,8 @@ deployment entry point.
 
 If the server already has MySQL, Java, and Apache/Nginx, build from source and
 let systemd run the backend. The configuration script can also set permissions,
-write the systemd service, and create an Apache site when run with sudo:
+write the systemd service, and create an Apache or Nginx site when run with
+sudo:
 
 ```bash
 sudo ./configure.sh

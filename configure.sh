@@ -5,6 +5,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="${SERVICE_NAME:-sudo-blog}"
 SERVICE_USER="${SERVICE_USER:-www-data}"
 APACHE_SITE_NAME="${APACHE_SITE_NAME:-sudo-blog}"
+NGINX_SITE_NAME="${NGINX_SITE_NAME:-sudo-blog}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -257,41 +258,121 @@ EOF
   apache2ctl configtest
 }
 
+write_nginx_site() {
+  local domain="$1"
+  local alias_value="$2"
+  local backend_port="$3"
+  local site_file="/etc/nginx/sites-available/${NGINX_SITE_NAME}"
+  local server_names="$domain"
+
+  if [[ -n "$alias_value" ]]; then
+    server_names="$server_names $alias_value"
+  fi
+
+  info "Writing Nginx site: $site_file"
+  cat > "$site_file" <<EOF
+server {
+    listen 80;
+    server_name ${server_names};
+
+    root ${APP_DIR}/front/dist;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${backend_port}/api/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Request-Id \$request_id;
+    }
+
+    location = /actuator/health {
+        proxy_pass http://127.0.0.1:${backend_port}/actuator/health;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Request-Id \$request_id;
+    }
+
+    access_log /var/log/nginx/${NGINX_SITE_NAME}-access.log;
+    error_log /var/log/nginx/${NGINX_SITE_NAME}-error.log;
+}
+EOF
+
+  ln -sfn "$site_file" "/etc/nginx/sites-enabled/${NGINX_SITE_NAME}"
+  if [[ -e /etc/nginx/sites-enabled/default ]]; then
+    rm -f /etc/nginx/sites-enabled/default
+  fi
+  nginx -t
+}
+
 configure_traditional_runtime() {
   local backend_port="$1"
 
   if ! is_root; then
-    warn "Skipping systemd/Apache setup because this script is not running as root."
+    warn "Skipping systemd/web server setup because this script is not running as root."
     warn "Run again with sudo if you want configure.sh to finish server setup automatically."
     return 0
   fi
 
-  if ! ask_yes_no "Configure permissions, systemd backend service, and Apache site now" "Y"; then
+  if ! ask_yes_no "Configure permissions, systemd backend service, and web server site now" "Y"; then
     warn "Skipped server setup. You can still start manually with: sudo -u $SERVICE_USER ./start.sh prod"
     return 0
   fi
 
   local domain
   local alias_value
-  domain="$(ask "Apache ServerName / domain" "$(hostname -f 2>/dev/null || echo localhost)")"
-  alias_value="$(ask "Apache ServerAlias (empty to skip)" "")"
+  local web_server
+  domain="$(ask "Site domain / server name" "$(hostname -f 2>/dev/null || echo localhost)")"
+  alias_value="$(ask "Site alias (empty to skip)" "")"
+  web_server="$(ask "Web server to configure (apache/nginx/none)" "apache")"
+  case "$web_server" in
+    apache|nginx|none) ;;
+    *) fail "Unsupported web server: $web_server" ;;
+  esac
 
   check_built_artifacts
   ensure_prod_oss_file
   fix_deployment_permissions
   write_systemd_service
 
-  if command -v apache2ctl >/dev/null 2>&1; then
-    write_apache_site "$domain" "$alias_value" "$backend_port"
-  else
-    warn "Apache command apache2ctl not found; skipped Apache site setup."
-  fi
+  case "$web_server" in
+    apache)
+      if command -v apache2ctl >/dev/null 2>&1; then
+        write_apache_site "$domain" "$alias_value" "$backend_port"
+      else
+        warn "Apache command apache2ctl not found; skipped Apache site setup."
+      fi
+      ;;
+    nginx)
+      if command -v nginx >/dev/null 2>&1; then
+        write_nginx_site "$domain" "$alias_value" "$backend_port"
+      else
+        warn "Nginx command not found; skipped Nginx site setup."
+      fi
+      ;;
+    none)
+      warn "Skipped web server site setup."
+      ;;
+  esac
 
-  if ask_yes_no "Start/restart backend and reload Apache now" "Y"; then
+  if ask_yes_no "Start/restart backend and reload selected web server now" "Y"; then
     systemctl restart "$SERVICE_NAME"
-    if command -v apache2ctl >/dev/null 2>&1; then
-      systemctl reload apache2
-    fi
+    case "$web_server" in
+      apache)
+        if command -v apache2ctl >/dev/null 2>&1; then
+          systemctl reload apache2
+        fi
+        ;;
+      nginx)
+        if command -v nginx >/dev/null 2>&1; then
+          systemctl reload nginx
+        fi
+        ;;
+    esac
     sleep 5
     if command -v curl >/dev/null 2>&1; then
       curl -i "http://127.0.0.1:${backend_port}/actuator/health" || true

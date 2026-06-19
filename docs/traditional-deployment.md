@@ -143,16 +143,17 @@ The frontend output is `front/dist`.
 systemd in production.
 
 When `configure.sh` is run with sudo in the `prod` profile, it can automate
-permissions, systemd setup, Apache setup, and service restart in the same
-interactive flow:
+permissions, systemd setup, Apache or Nginx setup, and service restart in the
+same interactive flow:
 
 ```bash
 sudo ./configure.sh
 ```
 
-The script still does not create the database, initialize schema, or run
-migrations. Run `bootstrap-schema.sql` or the numbered migrations before the
-final production start.
+During the flow, choose `apache`, `nginx`, or `none` for the web server. The
+script still does not create the database, initialize schema, or run migrations.
+Run `bootstrap-schema.sql` or the numbered migrations before the final
+production start.
 
 If you prefer to perform the setup manually, use the steps below.
 
