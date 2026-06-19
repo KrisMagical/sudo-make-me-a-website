@@ -22,11 +22,13 @@ ask() {
   local value
   if [[ -n "$default" ]]; then
     read -r -p "$prompt [$default]: " value
-    echo "${value:-$default}"
+    value="${value:-$default}"
   else
     read -r -p "$prompt: " value
-    echo "$value"
   fi
+  value="${value//$'\r'/}"
+  value="${value//$'\n'/}"
+  echo "$value"
 }
 
 ask_secret() {
@@ -34,7 +36,17 @@ ask_secret() {
   local value
   read -r -s -p "$prompt: " value
   echo
+  value="${value//$'\r'/}"
+  value="${value//$'\n'/}"
   echo "$value"
+}
+
+validate_single_line_value() {
+  local label="$1"
+  local value="$2"
+  if [[ "$value" == *$'\r'* || "$value" == *$'\n'* ]]; then
+    fail "$label must be a single line. Paste it again without line breaks."
+  fi
 }
 
 require_command() {
@@ -270,8 +282,8 @@ ${alias_line}
         RewriteEngine On
         RewriteBase /
         RewriteRule ^index\\.html$ - [L]
-        RewriteCond \${REQUEST_FILENAME} !-f
-        RewriteCond \${REQUEST_FILENAME} !-d
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
         RewriteRule . /index.html [L]
     </Directory>
 
@@ -445,6 +457,7 @@ DB_PASSWORD="$(ask_secret "Database password (required)")"
 if [[ -z "$DB_PASSWORD" ]]; then
   fail "Database password must not be empty."
 fi
+validate_single_line_value "Database password" "$DB_PASSWORD"
 
 DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
 export SPRING_DATASOURCE_URL="$DB_URL"
@@ -469,6 +482,8 @@ if [[ "$SET_ADMIN" =~ ^[Yy]$ ]]; then
   if [[ -z "$ADMIN_USERNAME" || -z "$ADMIN_PASSWORD" ]]; then
     fail "Admin username and password must not be empty."
   fi
+  validate_single_line_value "Admin username" "$ADMIN_USERNAME"
+  validate_single_line_value "Admin password" "$ADMIN_PASSWORD"
   write_kv_file "$APP_DIR/.env.admin" \
     "export BLOG_ADMIN_USERNAME=$(shell_quote "$ADMIN_USERNAME")" \
     "export BLOG_ADMIN_PASSWORD=$(shell_quote "$ADMIN_PASSWORD")"
@@ -490,6 +505,12 @@ if [[ "$SET_OSS" =~ ^[Yy]$ ]]; then
   if [[ -z "$OSS_KEY" || -z "$OSS_SECRET" ]]; then
     fail "OSS access key id and secret must not be empty."
   fi
+  validate_single_line_value "OSS endpoint" "$OSS_ENDPOINT"
+  validate_single_line_value "OSS bucket" "$OSS_BUCKET"
+  validate_single_line_value "OSS region" "$OSS_REGION"
+  validate_single_line_value "OSS CDN domain" "$OSS_CDN"
+  validate_single_line_value "OSS access key id" "$OSS_KEY"
+  validate_single_line_value "OSS access key secret" "$OSS_SECRET"
   write_kv_file "$APP_DIR/.env.oss" \
     "export OSS_ENDPOINT=$(shell_quote "$OSS_ENDPOINT")" \
     "export OSS_BUCKET_NAME=$(shell_quote "$OSS_BUCKET")" \

@@ -28,6 +28,20 @@ require_command() {
   exit 1
 }
 
+check_env_file_single_line_exports() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+
+  if grep -n "^export .*='[[:space:]]*$" "$file" >/tmp/sudo-blog-bad-env-lines 2>/dev/null; then
+    echo "Invalid multiline value detected in $file"
+    echo "The following export starts a quoted value but does not contain it on the same line:"
+    cat /tmp/sudo-blog-bad-env-lines
+    echo "Fix it so each value is a single line, for example:"
+    echo "  export SPRING_DATASOURCE_PASSWORD='your_password_here'"
+    exit 1
+  fi
+}
+
 case "$PROFILE" in
   dev|prod|test) ;;
   *)
@@ -56,6 +70,7 @@ if [[ "$PROFILE" == "prod" ]]; then
 fi
 
 if [[ -f "$APP_DIR/.env.oss" ]]; then
+  check_env_file_single_line_exports "$APP_DIR/.env.oss"
   # shellcheck disable=SC1091
   source "$APP_DIR/.env.oss"
 elif [[ "$PROFILE" == "prod" ]]; then
@@ -69,6 +84,7 @@ else
 fi
 
 if [[ -f "$APP_DIR/.env.database" ]]; then
+  check_env_file_single_line_exports "$APP_DIR/.env.database"
   # shellcheck disable=SC1091
   source "$APP_DIR/.env.database"
 elif [[ "$PROFILE" == "prod" ]]; then
@@ -78,6 +94,7 @@ elif [[ "$PROFILE" == "prod" ]]; then
 fi
 
 if [[ -f "$APP_DIR/.env.admin" ]]; then
+  check_env_file_single_line_exports "$APP_DIR/.env.admin"
   # shellcheck disable=SC1091
   source "$APP_DIR/.env.admin"
 fi
