@@ -61,7 +61,7 @@ write_kv_file() {
 }
 
 shell_quote() {
-  printf '%q' "$1"
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
 run_frontend_audit() {
@@ -152,7 +152,7 @@ if [[ -z "$DB_PASSWORD" ]]; then
   fail "Database password must not be empty."
 fi
 
-DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}"
+DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
 export SPRING_DATASOURCE_URL="$DB_URL"
 export SPRING_DATASOURCE_USERNAME="$DB_USER"
 export SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD"
