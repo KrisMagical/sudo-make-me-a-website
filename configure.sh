@@ -35,7 +35,7 @@ ask_secret() {
   local prompt="$1"
   local value
   read -r -s -p "$prompt: " value
-  echo
+  printf '\n' >&2
   value="${value//$'\r'/}"
   value="${value//$'\n'/}"
   printf '%s' "$value"
@@ -48,11 +48,11 @@ ask_required_secret() {
   while true; do
     value="$(ask_secret "$prompt")"
     if [[ -z "$value" ]]; then
-      warn "$label must not be empty. Enter the actual password, without wrapping quotes."
+      echo -e "${YELLOW}$label must not be empty. Enter the actual password, without wrapping quotes.${NC}" >&2
       continue
     fi
     if [[ "$value" == *$'\r'* || "$value" == *$'\n'* ]]; then
-      warn "$label must be a single line. Paste it again without line breaks."
+      echo -e "${YELLOW}$label must be a single line. Paste it again without line breaks.${NC}" >&2
       continue
     fi
     printf '%s' "$value"
