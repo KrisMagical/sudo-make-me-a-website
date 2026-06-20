@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE="${1:-${SPRING_PROFILES_ACTIVE:-dev}}"
+SERVICE_USER="${SERVICE_USER:-www-data}"
 
 fail() {
   echo "$*"
@@ -62,9 +63,9 @@ if [[ "$PROFILE" == "prod" ]]; then
   echo "Production mode: confirm a strong admin password is configured for first bootstrap."
   echo "Production mode: this script will not run schema migrations."
 
-  if [[ "$(id -un)" != "www-data" ]]; then
-    echo "Production start should run as www-data."
-    echo "Example: sudo -u www-data ./start.sh prod"
+  if [[ "$(id -un)" != "$SERVICE_USER" ]]; then
+    echo "Production start should run as $SERVICE_USER."
+    echo "Example: sudo -u $SERVICE_USER ./start.sh prod"
     exit 1
   fi
 fi
@@ -119,16 +120,16 @@ JAR_FILE="$(find "$APP_DIR/backend/target" -maxdepth 1 -type f -name '*.jar' ! -
 if [[ -z "$JAR_FILE" ]]; then
   echo "Backend jar not found. Build first:"
   echo "  cd backend && ./mvnw clean package -DskipTests"
-  echo "If running as www-data, also check permissions:"
-  echo "  sudo chown -R www-data:www-data $APP_DIR"
-  echo "  sudo -u www-data find $APP_DIR/backend/target -maxdepth 1 -type f -name '*.jar'"
+  echo "If running as $SERVICE_USER, also check permissions:"
+  echo "  sudo chown -R $SERVICE_USER:$SERVICE_USER $APP_DIR"
+  echo "  sudo -u $SERVICE_USER find $APP_DIR/backend/target -maxdepth 1 -type f -name '*.jar'"
   exit 1
 fi
 
 if [[ ! -r "$JAR_FILE" ]]; then
   echo "Backend jar is not readable by user $(id -un): $JAR_FILE"
   echo "Fix permissions, for example:"
-  echo "  sudo chown -R www-data:www-data $APP_DIR"
+  echo "  sudo chown -R $SERVICE_USER:$SERVICE_USER $APP_DIR"
   echo "  sudo chmod -R u+rwX,go+rX $APP_DIR"
   exit 1
 fi
@@ -142,6 +143,13 @@ if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$BACKEND_PORT )" | grep 
 fi
 
 echo "Backend port: $BACKEND_PORT"
-exec java -jar "$JAR_FILE" \
-  --server.port="$BACKEND_PORT" \
-  --spring.profiles.active="$PROFILE"
+JAVA_ARGS=(
+  "--server.port=$BACKEND_PORT"
+  "--spring.profiles.active=$PROFILE"
+)
+
+if [[ "$PROFILE" == "prod" ]]; then
+  JAVA_ARGS+=("--app.port.auto-adjust-enabled=false")
+fi
+
+exec java -jar "$JAR_FILE" "${JAVA_ARGS[@]}"

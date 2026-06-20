@@ -187,6 +187,35 @@ INSERT INTO site_configs (
   fi
 }
 
+verify_database_connection() {
+  if ! command -v mysql >/dev/null 2>&1; then
+    warn "mysql client not found; skipped database connection preflight."
+    warn "Install mysql client so configure.sh can catch database credential errors before startup."
+    return 0
+  fi
+
+  if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT 1;" >/dev/null 2>&1; then
+    info "Database connection preflight passed."
+  else
+    fail "Cannot connect to MySQL database '$DB_NAME' as '$DB_USER'. Create the database/user first and verify the password."
+  fi
+}
+
+verify_production_schema() {
+  [[ "$PROFILE" == "prod" ]] || return 0
+  if ! command -v mysql >/dev/null 2>&1; then
+    warn "mysql client not found; cannot verify production schema."
+    return 0
+  fi
+
+  local users_table
+  users_table="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SHOW TABLES LIKE 'users';" 2>/dev/null || true)"
+  if [[ "$users_table" != "users" ]]; then
+    fail "Production schema is not initialized. Run: mysql -u $DB_USER -p $DB_NAME < docs/migrations/bootstrap-schema.sql"
+  fi
+  info "Production schema preflight passed."
+}
+
 run_frontend_audit() {
   local front_dir="$1"
   if (cd "$front_dir" && npm audit --audit-level=high >/tmp/sudo-blog-npm-audit.log 2>&1); then
@@ -320,6 +349,7 @@ After=network.target mysql.service
 [Service]
 Type=simple
 User=${SERVICE_USER}
+Environment=SERVICE_USER=${SERVICE_USER}
 WorkingDirectory=${APP_DIR}
 ExecStart=${APP_DIR}/start.sh prod
 Restart=always
@@ -340,6 +370,9 @@ write_apache_site() {
   local enable_https="$4"
   local site_file="/etc/apache2/sites-available/${APACHE_SITE_NAME}.conf"
   local alias_line=""
+  local cert_file=""
+  local chain_file=""
+  local key_file=""
 
   if [[ -n "$alias_value" ]]; then
     alias_line="    ServerAlias ${alias_value}"
@@ -347,27 +380,39 @@ write_apache_site() {
 
   info "Writing Apache site: $site_file"
   if [[ "$enable_https" == "true" ]]; then
-    local cert_file
-    local chain_file
-    local key_file
     cert_file="$(ask "Apache SSL certificate file" "/etc/ssl/certs/${domain}_public.crt")"
     chain_file="$(ask "Apache SSL certificate chain file" "/etc/ssl/certs/${domain}_chain.crt")"
     key_file="$(ask "Apache SSL certificate key file" "/etc/ssl/private/${domain}.key")"
 
+    local missing_cert="false"
     if [[ ! -f "$cert_file" ]]; then
       warn "Certificate file not found yet: $cert_file"
+      missing_cert="true"
     fi
     if [[ ! -f "$chain_file" ]]; then
       warn "Certificate chain file not found yet: $chain_file"
+      missing_cert="true"
     fi
     if [[ ! -f "$key_file" ]]; then
       warn "Certificate key file not found yet: $key_file"
+      missing_cert="true"
     fi
     info "Apache HTTPS certificate paths:"
     info "  certificate: $cert_file"
     info "  chain:       $chain_file"
     info "  key:         $key_file"
 
+    if [[ "$missing_cert" == "true" ]]; then
+      warn "Apache cannot load an HTTPS virtual host until all certificate files exist."
+      if ask_yes_no "Generate an HTTP-only Apache site for now" "Y"; then
+        enable_https="false"
+      else
+        fail "Place the certificate files at the paths above, then rerun configure.sh."
+      fi
+    fi
+  fi
+
+  if [[ "$enable_https" == "true" ]]; then
     cat > "$site_file" <<EOF
 <VirtualHost *:443>
     ServerName ${domain}
@@ -417,7 +462,9 @@ ${alias_line}
     Redirect permanent / https://${domain}/
 </VirtualHost>
 EOF
-  else
+  fi
+
+  if [[ "$enable_https" != "true" ]]; then
     cat > "$site_file" <<EOF
 <VirtualHost *:80>
     ServerName ${domain}
@@ -621,7 +668,7 @@ esac
 SITE_NAME="$(ask "Website name" "KrisMagic")"
 SITE_DOMAIN="$(ask "Website domain" "magiccodelab.com")"
 SITE_AUTHOR="$(ask "Website author name" "KrisMagic")"
-SITE_FOOTER_TEXT="$(ask "Website footer/copyright text" "© 2026 KrisMagic. All rights reserved.")"
+SITE_FOOTER_TEXT="$(ask "Website footer/copyright text" "(c) 2026 KrisMagic. All rights reserved.")"
 validate_single_line_value "Website name" "$SITE_NAME"
 validate_single_line_value "Website domain" "$SITE_DOMAIN"
 validate_single_line_value "Website author name" "$SITE_AUTHOR"
@@ -637,7 +684,7 @@ fi
 
 DB_PASSWORD="$(ask_required_secret "Database password (required)" "Database password")"
 
-DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false"
 export SPRING_DATASOURCE_URL="$DB_URL"
 export SPRING_DATASOURCE_USERNAME="$DB_USER"
 export SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD"
@@ -647,6 +694,9 @@ write_kv_file "$APP_DIR/.env.database" \
   "export SPRING_DATASOURCE_USERNAME=$(shell_quote "$DB_USER")" \
   "export SPRING_DATASOURCE_PASSWORD=$(shell_quote "$DB_PASSWORD")"
 info "Wrote .env.database with restricted permissions."
+
+verify_database_connection
+verify_production_schema
 
 if [[ "$PROFILE" == "prod" ]]; then
   update_site_config_database
