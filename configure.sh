@@ -60,6 +60,22 @@ ask_required_secret() {
   done
 }
 
+ask_confirmed_secret() {
+  local prompt="$1"
+  local label="$2"
+  local first
+  local second
+  while true; do
+    first="$(ask_required_secret "$prompt" "$label")"
+    second="$(ask_required_secret "Confirm $label" "$label confirmation")"
+    if [[ "$first" == "$second" ]]; then
+      printf '%s' "$first"
+      return 0
+    fi
+    echo -e "${YELLOW}$label values did not match. Please enter them again.${NC}" >&2
+  done
+}
+
 validate_single_line_value() {
   local label="$1"
   local value="$2"
@@ -132,6 +148,26 @@ sql_quote() {
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
 }
 
+hash_bcrypt_password() {
+  local password="$1"
+  local hash
+  if ! command -v htpasswd >/dev/null 2>&1; then
+    echo -e "${RED}Cannot update an existing admin password because htpasswd is missing. Install it with: sudo apt install -y apache2-utils${NC}" >&2
+    return 1
+  fi
+  if ! hash="$(printf '%s\n' "$password" | htpasswd -nBi -C 12 "" 2>/dev/null | sed 's/^://')"; then
+    echo -e "${RED}Could not generate BCrypt password hash with htpasswd.${NC}" >&2
+    return 1
+  fi
+  hash="${hash//$'\r'/}"
+  hash="${hash//$'\n'/}"
+  if [[ -z "$hash" || "$hash" != \$2* ]]; then
+    echo -e "${RED}Generated BCrypt password hash was invalid.${NC}" >&2
+    return 1
+  fi
+  printf '%s' "$hash"
+}
+
 write_frontend_env() {
   local file="$APP_DIR/front/.env.production"
   local api_base="$1"
@@ -187,6 +223,31 @@ INSERT INTO site_configs (
   fi
 }
 
+update_admin_password_database() {
+  local username="$1"
+  local password="$2"
+
+  if ! command -v mysql >/dev/null 2>&1; then
+    warn "mysql client not found; skipped existing admin password update."
+    return 0
+  fi
+
+  local exists
+  exists="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM users WHERE username = $(sql_quote "$username");" 2>/dev/null || echo 0)"
+  if [[ "$exists" == "0" ]]; then
+    warn "Admin user '$username' does not exist yet; bootstrap variables will create it on first successful backend start."
+    return 0
+  fi
+
+  local password_hash
+  if ! password_hash="$(hash_bcrypt_password "$password")"; then
+    fail "Existing admin password was not changed."
+  fi
+  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+    -e "UPDATE users SET password = $(sql_quote "$password_hash") WHERE username = $(sql_quote "$username");"
+  info "Updated password for existing admin user '$username'."
+}
+
 verify_database_connection() {
   if ! command -v mysql >/dev/null 2>&1; then
     warn "mysql client not found; skipped database connection preflight."
@@ -212,6 +273,24 @@ verify_production_schema() {
   users_table="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SHOW TABLES LIKE 'users';" 2>/dev/null || true)"
   if [[ "$users_table" != "users" ]]; then
     fail "Production schema is not initialized. Run: mysql -u $DB_USER -p $DB_NAME < docs/migrations/bootstrap-schema.sql"
+  fi
+
+  local missing_items=()
+  local comments_status
+  local comments_moderation_reason
+  local like_logs_unique
+  comments_status="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'comments' AND COLUMN_NAME = 'status';" 2>/dev/null || echo 0)"
+  comments_moderation_reason="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'comments' AND COLUMN_NAME = 'moderation_reason';" 2>/dev/null || echo 0)"
+  like_logs_unique="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'like_logs' AND INDEX_NAME = 'uk_like_logs_post_identifier';" 2>/dev/null || echo 0)"
+
+  [[ "$comments_status" == "1" ]] || missing_items+=("comments.status")
+  [[ "$comments_moderation_reason" == "1" ]] || missing_items+=("comments.moderation_reason")
+  [[ "$like_logs_unique" == "1" ]] || missing_items+=("like_logs.uk_like_logs_post_identifier")
+
+  if (( ${#missing_items[@]} > 0 )); then
+    warn "Production schema is missing required migration artifacts:"
+    printf '  - %s\n' "${missing_items[@]}"
+    fail "Run pending migrations in order: docs/migrations/001-comment-status-and-like-log-unique.sql then docs/migrations/002-comment-moderation-reason.sql"
   fi
   info "Production schema preflight passed."
 }
@@ -713,12 +792,15 @@ if [[ "$SET_ADMIN" =~ ^[Yy]$ ]]; then
   if [[ -z "$ADMIN_USERNAME" ]]; then
     fail "Admin username must not be empty."
   fi
-  ADMIN_PASSWORD="$(ask_required_secret "Admin password" "Admin password")"
+  ADMIN_PASSWORD="$(ask_confirmed_secret "Admin password" "Admin password")"
   validate_single_line_value "Admin username" "$ADMIN_USERNAME"
   write_kv_file "$APP_DIR/.env.admin" \
     "export BLOG_ADMIN_USERNAME=$(shell_quote "$ADMIN_USERNAME")" \
     "export BLOG_ADMIN_PASSWORD=$(shell_quote "$ADMIN_PASSWORD")"
   info "Wrote .env.admin with restricted permissions."
+  if [[ "$PROFILE" == "prod" ]] && ask_yes_no "Update this admin password in the existing database now" "Y"; then
+    update_admin_password_database "$ADMIN_USERNAME" "$ADMIN_PASSWORD"
+  fi
   warn "Remove BLOG_ADMIN_USERNAME and BLOG_ADMIN_PASSWORD after the admin account exists."
 else
   warn "Skipped admin bootstrap variables."
