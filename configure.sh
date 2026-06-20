@@ -281,11 +281,11 @@ verify_production_schema() {
   local like_logs_unique
   comments_status="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'comments' AND COLUMN_NAME = 'status';" 2>/dev/null || echo 0)"
   comments_moderation_reason="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'comments' AND COLUMN_NAME = 'moderation_reason';" 2>/dev/null || echo 0)"
-  like_logs_unique="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'like_logs' AND INDEX_NAME = 'uk_like_logs_post_identifier';" 2>/dev/null || echo 0)"
+  like_logs_unique="$(mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" -e "SELECT COUNT(*) FROM (SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'like_logs' AND NON_UNIQUE = 0 AND COLUMN_NAME IN ('post_id', 'identifier') GROUP BY INDEX_NAME HAVING SUM(COLUMN_NAME = 'post_id') = 1 AND SUM(COLUMN_NAME = 'identifier') = 1 AND COUNT(*) = 2) unique_like_log_indexes;" 2>/dev/null || echo 0)"
 
   [[ "$comments_status" == "1" ]] || missing_items+=("comments.status")
   [[ "$comments_moderation_reason" == "1" ]] || missing_items+=("comments.moderation_reason")
-  [[ "$like_logs_unique" == "1" ]] || missing_items+=("like_logs.uk_like_logs_post_identifier")
+  [[ "$like_logs_unique" -ge 1 ]] || missing_items+=("like_logs unique index on post_id + identifier")
 
   if (( ${#missing_items[@]} > 0 )); then
     warn "Production schema is missing required migration artifacts:"
