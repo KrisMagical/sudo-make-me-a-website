@@ -344,6 +344,10 @@ write_apache_site() {
     if [[ ! -f "$key_file" ]]; then
       warn "Certificate key file not found yet: $key_file"
     fi
+    info "Apache HTTPS certificate paths:"
+    info "  certificate: $cert_file"
+    info "  chain:       $chain_file"
+    info "  key:         $key_file"
 
     cat > "$site_file" <<EOF
 <VirtualHost *:443>
@@ -430,6 +434,13 @@ ${alias_line}
     CustomLog \${APACHE_LOG_DIR}/${APACHE_SITE_NAME}-access.log combined
 </VirtualHost>
 EOF
+  fi
+
+  if grep -q '\${REQUEST_FILENAME}' "$site_file"; then
+    fail "Apache site contains invalid RewriteCond variable syntax: \${REQUEST_FILENAME}. Use %{REQUEST_FILENAME}."
+  fi
+  if ! grep -q '%{REQUEST_FILENAME}' "$site_file"; then
+    fail "Apache site is missing the SPA rewrite checks that use %{REQUEST_FILENAME}."
   fi
 
   a2enmod rewrite proxy proxy_http headers >/dev/null
