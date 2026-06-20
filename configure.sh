@@ -437,11 +437,17 @@ EOF
   fi
 
   if grep -q '\${REQUEST_FILENAME}' "$site_file"; then
-    fail "Apache site contains invalid RewriteCond variable syntax: \${REQUEST_FILENAME}. Use %{REQUEST_FILENAME}."
+    warn "Repairing invalid Apache RewriteCond variable syntax in $site_file."
+    sed -i 's/${REQUEST_FILENAME}/%{REQUEST_FILENAME}/g' "$site_file"
+  fi
+  if grep -q '\${REQUEST_FILENAME}' "$site_file"; then
+    fail "Apache site still contains invalid RewriteCond variable syntax: \${REQUEST_FILENAME}. Use %{REQUEST_FILENAME}."
   fi
   if ! grep -q '%{REQUEST_FILENAME}' "$site_file"; then
     fail "Apache site is missing the SPA rewrite checks that use %{REQUEST_FILENAME}."
   fi
+  info "Apache rewrite checks:"
+  grep -n 'REQUEST_FILENAME' "$site_file"
 
   a2enmod rewrite proxy proxy_http headers >/dev/null
   if [[ "$enable_https" == "true" ]]; then
