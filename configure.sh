@@ -528,6 +528,9 @@ ${alias_line}
     ProxyPass /api/ http://127.0.0.1:${backend_port}/api/
     ProxyPassReverse /api/ http://127.0.0.1:${backend_port}/api/
 
+    ProxyPass /login http://127.0.0.1:${backend_port}/login
+    ProxyPassReverse /login http://127.0.0.1:${backend_port}/login
+
     ProxyPass /actuator/health http://127.0.0.1:${backend_port}/actuator/health
     ProxyPassReverse /actuator/health http://127.0.0.1:${backend_port}/actuator/health
 
@@ -568,6 +571,9 @@ ${alias_line}
 
     ProxyPass /api/ http://127.0.0.1:${backend_port}/api/
     ProxyPassReverse /api/ http://127.0.0.1:${backend_port}/api/
+
+    ProxyPass /login http://127.0.0.1:${backend_port}/login
+    ProxyPassReverse /login http://127.0.0.1:${backend_port}/login
 
     ProxyPass /actuator/health http://127.0.0.1:${backend_port}/actuator/health
     ProxyPassReverse /actuator/health http://127.0.0.1:${backend_port}/actuator/health
@@ -629,6 +635,15 @@ server {
 
     location /api/ {
         proxy_pass http://127.0.0.1:${backend_port}/api/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Request-Id \$request_id;
+    }
+
+    location = /login {
+        proxy_pass http://127.0.0.1:${backend_port}/login;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
