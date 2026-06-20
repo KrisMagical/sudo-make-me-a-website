@@ -38,7 +38,26 @@ ask_secret() {
   echo
   value="${value//$'\r'/}"
   value="${value//$'\n'/}"
-  echo "$value"
+  printf '%s' "$value"
+}
+
+ask_required_secret() {
+  local prompt="$1"
+  local label="$2"
+  local value
+  while true; do
+    value="$(ask_secret "$prompt")"
+    if [[ -z "$value" ]]; then
+      warn "$label must not be empty. Enter the actual password, without wrapping quotes."
+      continue
+    fi
+    if [[ "$value" == *$'\r'* || "$value" == *$'\n'* ]]; then
+      warn "$label must be a single line. Paste it again without line breaks."
+      continue
+    fi
+    printf '%s' "$value"
+    return 0
+  done
 }
 
 validate_single_line_value() {
@@ -616,11 +635,7 @@ if [[ "$DB_USER" == "root" && "$PROFILE" == "prod" ]]; then
   warn "Using root for production is not recommended. Prefer a dedicated database user."
 fi
 
-DB_PASSWORD="$(ask_secret "Database password (required)")"
-if [[ -z "$DB_PASSWORD" ]]; then
-  fail "Database password must not be empty."
-fi
-validate_single_line_value "Database password" "$DB_PASSWORD"
+DB_PASSWORD="$(ask_required_secret "Database password (required)" "Database password")"
 
 DB_URL="jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
 export SPRING_DATASOURCE_URL="$DB_URL"
@@ -645,12 +660,11 @@ fi
 read -r -p "Configure initial admin bootstrap variables now? (y/N): " SET_ADMIN
 if [[ "$SET_ADMIN" =~ ^[Yy]$ ]]; then
   ADMIN_USERNAME="$(ask "Admin username")"
-  ADMIN_PASSWORD="$(ask_secret "Admin password")"
-  if [[ -z "$ADMIN_USERNAME" || -z "$ADMIN_PASSWORD" ]]; then
-    fail "Admin username and password must not be empty."
+  if [[ -z "$ADMIN_USERNAME" ]]; then
+    fail "Admin username must not be empty."
   fi
+  ADMIN_PASSWORD="$(ask_required_secret "Admin password" "Admin password")"
   validate_single_line_value "Admin username" "$ADMIN_USERNAME"
-  validate_single_line_value "Admin password" "$ADMIN_PASSWORD"
   write_kv_file "$APP_DIR/.env.admin" \
     "export BLOG_ADMIN_USERNAME=$(shell_quote "$ADMIN_USERNAME")" \
     "export BLOG_ADMIN_PASSWORD=$(shell_quote "$ADMIN_PASSWORD")"
@@ -667,17 +681,12 @@ if [[ "$SET_OSS" =~ ^[Yy]$ ]]; then
   OSS_BUCKET="$(ask "OSS bucket" "krismagic-images")"
   OSS_REGION="$(ask "OSS region" "cn-guangzhou")"
   OSS_CDN="$(ask "OSS CDN domain" "cdn.magiccodelab.com")"
-  OSS_KEY="$(ask_secret "OSS access key id")"
-  OSS_SECRET="$(ask_secret "OSS access key secret")"
-  if [[ -z "$OSS_KEY" || -z "$OSS_SECRET" ]]; then
-    fail "OSS access key id and secret must not be empty."
-  fi
+  OSS_KEY="$(ask_required_secret "OSS access key id" "OSS access key id")"
+  OSS_SECRET="$(ask_required_secret "OSS access key secret" "OSS access key secret")"
   validate_single_line_value "OSS endpoint" "$OSS_ENDPOINT"
   validate_single_line_value "OSS bucket" "$OSS_BUCKET"
   validate_single_line_value "OSS region" "$OSS_REGION"
   validate_single_line_value "OSS CDN domain" "$OSS_CDN"
-  validate_single_line_value "OSS access key id" "$OSS_KEY"
-  validate_single_line_value "OSS access key secret" "$OSS_SECRET"
   write_kv_file "$APP_DIR/.env.oss" \
     "export OSS_ENDPOINT=$(shell_quote "$OSS_ENDPOINT")" \
     "export OSS_BUCKET_NAME=$(shell_quote "$OSS_BUCKET")" \
