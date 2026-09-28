@@ -1,0 +1,16 @@
+.idea/
+.env
+.env.*
+!.env.example
+.backend-port
+.env.admin
+.env.database
+.env.oss
+front/.frontend-port
+logs/
+*.log
+backups/
+*.sql.gz
+node_modules/
+dist/
+target/
